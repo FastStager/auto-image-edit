@@ -204,23 +204,19 @@
             emptyCanvas = new fabric.Canvas('empty-canvas', { backgroundColor: '#eee' });
 
             [stagedCanvas, emptyCanvas].forEach(canvas => {
-                setupSelectionListeners(canvas);
+                const buttons = ['rotate-btn', 'flip-x-btn'];
+                canvas.on('selection:created', () => buttons.forEach(id => document.getElementById(id).disabled = false));
+                canvas.on('selection:cleared', () => buttons.forEach(id => document.getElementById(id).disabled = true));
             });
-
-            emptyCanvas.on('mouse:down', handleCanvasMouseDown);
         }
 
-        function drawAnnotations(canvas, imageUrl, objects) {
-            if (!canvas) {
-                console.error("Canvas is not initialized!");
-                return;
-            }
+        function drawCutouts(canvas, backgroundUrl, objects) {
             canvas.clear();
-            canvas.setBackgroundColor('#eee', canvas.renderAll.bind(canvas));
-            fabric.Image.fromURL(imageUrl, (img) => {
+            fabric.Image.fromURL(backgroundUrl, (img) => {
                 const scale = canvasWidth / img.width;
                 canvas.setWidth(canvasWidth).setHeight(img.height * scale);
                 canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), { scaleX: scale, scaleY: scale });
+
                 objects.forEach(obj => {
                     fabric.Image.fromURL(obj.url, (furnitureImg) => {
                         furnitureImg.set({
@@ -228,7 +224,7 @@
                             top: obj.bbox[1] * scale,
                             scaleX: (obj.bbox[2] * scale) / furnitureImg.width,
                             scaleY: (obj.bbox[3] * scale) / furnitureImg.height,
-                            id: obj.id
+                            id: `furniture-${obj.id}`
                         });
                         canvas.add(furnitureImg);
                     }, { crossOrigin: 'anonymous' });
@@ -243,100 +239,63 @@
         }
 
         function updateStatus(message, isError = false) {
-            statusDiv.textContent = message;
-            statusDiv.style.color = isError ? 'red' : 'black';
+            document.getElementById('status').textContent = message;
+            document.getElementById('status').style.color = isError ? 'red' : 'black';
         }
 
         function getActiveCanvas() {
-            const activeTab = document.querySelector('.tab-button.active').getAttribute('onclick').includes('staged') ? 'staged' : 'empty';
-            return activeTab === 'staged' ? stagedCanvas : emptyCanvas;
+            return document.querySelector('.tab-button.active').getAttribute('onclick').includes('staged') ? stagedCanvas : emptyCanvas;
         }
-
-        function setupSelectionListeners(canvas) {
-            const buttons = ['rotate-btn', 'flip-x-btn', 'set-facing-btn'];
-            canvas.on('selection:created', () => buttons.forEach(id => document.getElementById(id).disabled = false));
-            canvas.on('selection:cleared', () => buttons.forEach(id => document.getElementById(id).disabled = true));
-        }
-
-        const statusDiv = document.getElementById('status');
 
         document.getElementById('detect-btn').addEventListener('click', async () => {
             const emptyImageFile = document.getElementById('empty-image').files[0];
             const stagedImageFile = document.getElementById('staged-image').files[0];
             if (!emptyImageFile || !stagedImageFile) { updateStatus("Please upload both images.", true); return; }
             updateStatus("Detecting objects...");
+
             const formData = new FormData();
             formData.append('empty_image', emptyImageFile);
             formData.append('staged_image', stagedImageFile);
             formData.append('prompts', document.getElementById('prompts').value);
+
             try {
                 const response = await fetch('/detect', { method: 'POST', body: formData });
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
+
                 emptyRoomImageUrl = data.empty_image_url;
-                drawAnnotations(stagedCanvas, data.staged_image_url, data.objects);
+
+                drawCutouts(stagedCanvas, data.staged_image_url, data.objects);
+
                 updateStatus(`✅ Detection complete! Found ${data.objects.length} objects.`);
                 document.getElementById('transfer-btn').disabled = false;
-            } catch (error) { updateStatus(`Error: ${error.message}`, true); }
+            } catch (error) {
+                updateStatus(`Error: ${error.message}`, true);
+            }
         });
 
-        document.getElementById('transfer-btn').addEventListener('click', async () => {
-            if (!emptyRoomImageUrl) {
-                updateStatus("Cannot transfer. Empty room data is missing.", true);
-                return;
-            }
+        document.getElementById('transfer-btn').addEventListener('click', () => {
+            if (!emptyRoomImageUrl) { updateStatus("Cannot transfer, empty room URL is missing.", true); return; }
             updateStatus("Transferring objects...");
 
-            const transferBtn = document.getElementById('transfer-btn');
-            transferBtn.disabled = true;
+            const objectsToTransfer = stagedCanvas.getObjects().map(obj => ({
+                url: obj.getSrc(),
+                bbox: [obj.left, obj.top, obj.width * obj.scaleX, obj.height * obj.scaleY],
+                id: obj.id
+            }));
 
-            try {
-                emptyCanvas.clear();
-                emptyCanvas.setBackgroundColor('#eee');
+            drawCutouts(emptyCanvas, emptyRoomImageUrl, objectsToTransfer);
 
-                await new Promise(resolve => {
-                    fabric.Image.fromURL(emptyRoomImageUrl, (img) => {
-                        const scale = canvasWidth / img.width;
-                        emptyCanvas.setWidth(canvasWidth).setHeight(img.height * scale);
-                        emptyCanvas.setBackgroundImage(img, () => resolve(), { scaleX: scale, scaleY: scale });
-                    });
-                });
-
-
-                const clonePromises = stagedCanvas.getObjects().map(obj => {
-                    return new Promise(resolve => {
-                        obj.clone(cloned => resolve(cloned));
-                    });
-                });
-
-                const clonedObjects = await Promise.all(clonePromises);
-
-                clonedObjects.forEach(clonedObj => emptyCanvas.add(clonedObj));
-                emptyCanvas.renderAll();
-
-                updateStatus("✅ Transfer complete.");
-                const generateBtn = document.getElementById('generate-btn');
-                if (generateBtn) generateBtn.disabled = false;
-                showTab('empty');
-
-            } catch (error) {
-                updateStatus("Error during transfer: " + error.message, true);
-            } finally {
-                transferBtn.disabled = false;
-            }
+            updateStatus("✅ Transfer complete.");
+            const generateBtn = document.getElementById('generate-btn');
+            if (generateBtn) generateBtn.disabled = false;
+            showTab('empty');
         });
 
         document.getElementById('start-over-btn').addEventListener('click', () => {
-            const canvases = [stagedCanvas, emptyCanvas];
-            canvases.forEach(canvas => {
-                if (canvas) {
-                    canvas.clear();
-                    canvas.setBackgroundColor('#eee', canvas.renderAll.bind(canvas));
-                }
-            });
+            stagedCanvas.clear().setBackgroundColor('#eee');
+            emptyCanvas.clear().setBackgroundColor('#eee');
             emptyRoomImageUrl = null;
-            isSettingDirection = false;
-            selectedObjectForDirection = null;
             document.getElementById('transfer-btn').disabled = true;
             const generateBtn = document.getElementById('generate-btn');
             if (generateBtn) generateBtn.disabled = true;
@@ -344,35 +303,36 @@
         });
 
         document.getElementById('rotate-btn').addEventListener('click', () => {
-            const canvas = getActiveCanvas();
-            const obj = canvas?.getActiveObject();
-            if (obj) { obj.rotate(obj.angle + 15); canvas.renderAll(); }
+            const obj = getActiveCanvas()?.getActiveObject();
+            if (obj) { obj.rotate(obj.angle + 15); getActiveCanvas().renderAll(); }
         });
 
         document.getElementById('flip-x-btn').addEventListener('click', () => {
-            const canvas = getActiveCanvas();
-            const obj = canvas?.getActiveObject();
-            if (obj) { obj.toggle('flipX'); canvas.renderAll(); }
+            const obj = getActiveCanvas()?.getActiveObject();
+            if (obj) { obj.toggle('flipX'); getActiveCanvas().renderAll(); }
         });
 
         const generateBtn = document.getElementById('generate-btn');
         if (generateBtn) {
             generateBtn.addEventListener('click', async () => {
+                if (!emptyRoomImageUrl || emptyCanvas.getObjects().length === 0) {
+                    updateStatus("Error: No objects or empty room data to generate from.", true);
+                    return;
+                }
+
                 generateBtn.disabled = true;
                 let seconds = 0;
                 const timerInterval = setInterval(() => { seconds++; updateStatus(`🚀 AI is processing... (${seconds}s)`); }, 1000);
 
                 try {
-                    const scale = emptyCanvas.backgroundImage.scaleX;
+                    const emptyCanvasScale = emptyCanvas.backgroundImage.scaleX;
                     const finalObjects = emptyCanvas.getObjects().map(obj => {
                         const bbox = obj.getBoundingRect();
                         return {
                             id: obj.id,
                             bbox: [
-                                bbox.left / scale,
-                                bbox.top / scale,
-                                bbox.width / scale,
-                                bbox.height / scale
+                                bbox.left / emptyCanvasScale, bbox.top / emptyCanvasScale,
+                                bbox.width / emptyCanvasScale, bbox.height / emptyCanvasScale
                             ]
                         };
                     });
@@ -418,6 +378,7 @@
 
         window.onload = initCanvases;
     </script>
+
 
 </body>
 
