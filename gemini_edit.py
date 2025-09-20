@@ -34,7 +34,7 @@ def run_enhanced_ai_edit(reference_sheet: Image.Image, marker_image: Image.Image
     """
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-2.5-flash-image-preview")
 
         response = model.generate_content(
             [text_prompt, reference_sheet, marker_image, user_prompt]
