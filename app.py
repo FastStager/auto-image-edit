@@ -3,7 +3,7 @@ import uuid
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from pyngrok import ngrok
 import json
-from PIL import Image, ImageFilter
+from PIL import Image, ImageDraw
 import numpy as np
 import cv2
 
@@ -144,21 +144,43 @@ def prepare_for_ai():
 
 @app.route('/run_ai', methods=['POST'])
 def run_ai_edit_endpoint():
-    if 'composite_image' not in request.files:
-        return jsonify({'error': 'Missing composite image.'}), 400
+    data = request.json
+    final_objects = data.get('objects', [])
+    user_prompt = data.get('user_prompt', 'Fix lighting and shadows.')
+    empty_image_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(data.get('empty_image_url')))
 
-    composite_img_file = request.files['composite_image']
-    user_prompt = request.form.get('user_prompt', 'Fix lighting and shadows.')
-    composite_pil = Image.open(composite_img_file.stream).convert("RGBA")
+    if not all([final_objects, user_prompt, empty_image_path]):
+        return jsonify({'error': 'Missing final objects data or empty image URL.'}), 400
 
-    composite_np = np.array(composite_pil)
-    alpha_channel = composite_np[:, :, 3]
-    inpainting_mask = (alpha_channel > 10).astype(np.uint8) * 255
-    kernel = np.ones((20, 20), np.uint8) 
-    dilated_mask = cv2.dilate(inpainting_mask, kernel, iterations=1)
-    mask_pil = Image.fromarray(dilated_mask)
+    empty_room_pil = Image.open(empty_image_path).convert("RGB")
+    draw = ImageDraw.Draw(empty_room_pil)
+    
+    circle_colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
+    
+    for i, obj in enumerate(final_objects):
+        x, y, w, h = obj['bbox']
+        center_x, center_y = x + w / 2, y + h / 2
+        radius = min(w, h) / 4 
+        color = circle_colors[i % len(circle_colors)]
+        
+        ellipse_bbox = [center_x - radius, center_y - radius, center_x + radius, center_y + radius]
+        draw.ellipse(ellipse_bbox, fill=color, outline="black", width=2)
+        
+    marker_image_pil = empty_room_pil
 
-    result_image, status_message = run_enhanced_ai_edit(composite_pil.convert("RGB"), mask_pil, user_prompt)
+    original_cutout_paths = config.detection_results.get('original_cutouts', [])
+    if not original_cutout_paths:
+        return jsonify({'error': 'Original cutouts not found.'}), 500
+    images = [Image.open(p) for p in original_cutout_paths]
+    total_width = sum(img.width for img in images)
+    max_height = max(img.height for img in images)
+    reference_sheet = Image.new('RGBA', (total_width, max_height))
+    current_x = 0
+    for img in images:
+        reference_sheet.paste(img, (current_x, 0))
+        current_x += img.width
+
+    result_image, status_message = run_enhanced_ai_edit(reference_sheet, marker_image_pil, user_prompt)
 
     if result_image is None:
         return jsonify({'error': status_message}), 500

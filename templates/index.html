@@ -332,42 +332,42 @@
         if (generateBtn) {
             generateBtn.addEventListener('click', async () => {
                 generateBtn.disabled = true;
-
                 let seconds = 0;
-                const timerInterval = setInterval(() => {
-                    seconds++;
-                    const currentStatus = statusDiv.textContent.split('(')[0];
-                    statusDiv.textContent = `${currentStatus} (${seconds}s)`;
-                }, 1000);
+                const timerInterval = setInterval(() => { seconds++; updateStatus(`🚀 AI is processing... (${seconds}s)`); }, 1000);
 
                 try {
-                    updateStatus("Composing final image for AI...");
-                    const createBlob = (canvas) => {
-                        return new Promise(resolve => {
-                            canvas.getObjects().forEach(obj => obj.set('hasControls', false));
-                            canvas.discardActiveObject().renderAll();
-                            canvas.getElement().toBlob(blob => {
-                                canvas.getObjects().forEach(obj => obj.set('hasControls', true));
-                                canvas.renderAll();
-                                resolve(blob);
-                            });
-                        });
+                    const scale = emptyCanvas.backgroundImage.scaleX;
+                    const finalObjects = emptyCanvas.getObjects().map(obj => {
+                        const bbox = obj.getBoundingRect();
+                        return {
+                            id: obj.id,
+                            bbox: [
+                                bbox.left / scale,
+                                bbox.top / scale,
+                                bbox.width / scale,
+                                bbox.height / scale
+                            ]
+                        };
+                    });
+
+                    const payload = {
+                        objects: finalObjects,
+                        user_prompt: document.getElementById('user-prompt').value,
+                        empty_image_url: emptyRoomImageUrl
                     };
-                    const compositeBlob = await createBlob(emptyCanvas);
 
-                    updateStatus("Composition complete. Sending to AI...");
-                    const userPrompt = document.getElementById('user-prompt').value;
-                    const formData = new FormData();
-                    formData.append('composite_image', compositeBlob, 'composite.png');
-                    formData.append('user_prompt', userPrompt);
+                    const response = await fetch('/run_ai', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
 
-                    const response = await fetch('/run_ai', { method: 'POST', body: formData });
                     const data = await response.json();
                     if (data.error) throw new Error(data.error);
 
                     document.getElementById('result-image').src = data.result_image_url;
                     showTab('result');
-                    updateStatus(`✅ AI Edit Complete!`);
+                    updateStatus(`✅ AI Edit Complete! (Took ${seconds}s)`);
 
                 } catch (e) {
                     updateStatus(`Error: ${e.message}`, true);
