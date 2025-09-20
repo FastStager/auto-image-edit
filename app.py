@@ -147,43 +147,61 @@ def run_ai_edit_endpoint():
     data = request.json
     final_objects = data.get('objects', [])
     user_prompt = data.get('user_prompt', 'Fix lighting and shadows.')
-    empty_image_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(data.get('empty_image_url')))
+    empty_image_url = data.get('empty_image_url')
 
-    if not all([final_objects, user_prompt, empty_image_path]):
+    if not all([final_objects, user_prompt, empty_image_url]):
         return jsonify({'error': 'Missing final objects data or empty image URL.'}), 400
 
-    empty_room_pil = Image.open(empty_image_path).convert("RGB")
-    draw = ImageDraw.Draw(empty_room_pil)
+    empty_image_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(empty_image_url))
+    original_cutout_paths = config.detection_results.get('original_cutouts', [])
+
+    if not os.path.exists(empty_image_path) or not original_cutout_paths:
+        return jsonify({'error': 'Source images not found. Please re-detect.'}), 500
+
+    final_object_details = {}
+    for obj in final_objects:
+        obj_id = int(obj['id'].split('-')[-1]) 
+        for path in original_cutout_paths:
+            if f"cutout_{obj_id}.png" in path:
+                final_object_details[obj_id] = {
+                    'path': path,
+                    'bbox': obj['bbox']
+                }
+                break
     
     circle_colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
     
-    for i, obj in enumerate(final_objects):
-        x, y, w, h = obj['bbox']
-        center_x, center_y = x + w / 2, y + h / 2
-        radius = min(w, h) / 4 
+    marker_image_pil = Image.open(empty_image_path).convert("RGB")
+    marker_draw = ImageDraw.Draw(marker_image_pil)
+    
+    cutout_images = [Image.open(details['path']) for details in final_object_details.values()]
+    max_w = max(img.width for img in cutout_images) if cutout_images else 0
+    max_h = max(img.height for img in cutout_images) if cutout_images else 0
+    staged_sheet_pil = Image.new('RGBA', (max_w * len(cutout_images), max_h))
+    staged_draw = ImageDraw.Draw(staged_sheet_pil)
+
+    current_x = 0
+    for i, (obj_id, details) in enumerate(final_object_details.items()):
         color = circle_colors[i % len(circle_colors)]
         
-        ellipse_bbox = [center_x - radius, center_y - radius, center_x + radius, center_y + radius]
-        draw.ellipse(ellipse_bbox, fill=color, outline="black", width=2)
+        x, y, w, h = details['bbox']
+        marker_center_x, marker_center_y = x + w / 2, y + h / 2
+        marker_radius = min(w, h) / 4
+        marker_bbox = [marker_center_x - marker_radius, marker_center_y - marker_radius, marker_center_x + marker_radius, marker_center_y + marker_radius]
+        marker_draw.ellipse(marker_bbox, fill=color)
+
+        cutout_img = Image.open(details['path'])
+        staged_sheet_pil.paste(cutout_img, (current_x, 0))
         
-    marker_image_pil = empty_room_pil
+        sheet_center_x, sheet_center_y = current_x + cutout_img.width / 2, cutout_img.height / 2
+        sheet_radius = min(cutout_img.width, cutout_img.height) / 5
+        sheet_bbox = [sheet_center_x - sheet_radius, sheet_center_y - sheet_radius, sheet_center_x + sheet_radius, sheet_center_y + sheet_radius]
+        staged_draw.ellipse(sheet_bbox, fill=color)
+        current_x += max_w
 
-    original_cutout_paths = config.detection_results.get('original_cutouts', [])
-    if not original_cutout_paths:
-        return jsonify({'error': 'Original cutouts not found.'}), 500
-    images = [Image.open(p) for p in original_cutout_paths]
-    total_width = sum(img.width for img in images)
-    max_height = max(img.height for img in images)
-    reference_sheet = Image.new('RGBA', (total_width, max_height))
-    current_x = 0
-    for img in images:
-        reference_sheet.paste(img, (current_x, 0))
-        current_x += img.width
+    result_image, status_message = run_enhanced_ai_edit(staged_sheet_pil, marker_image_pil, user_prompt)
 
-    result_image, status_message = run_enhanced_ai_edit(reference_sheet, marker_image_pil, user_prompt)
-
-    if result_image is None:
-        return jsonify({'error': status_message}), 500
+    if result_image is None: return jsonify({'error': status_message}), 500
 
     result_filename = f"result_{uuid.uuid4()}.png"
     result_filepath = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
