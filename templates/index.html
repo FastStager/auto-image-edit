@@ -280,23 +280,50 @@
             } catch (error) { updateStatus(`Error: ${error.message}`, true); }
         });
 
-        document.getElementById('transfer-btn').addEventListener('click', () => {
-            if (!emptyRoomImageUrl) { updateStatus("Cannot transfer.", true); return; }
+        document.getElementById('transfer-btn').addEventListener('click', async () => {
+            if (!emptyRoomImageUrl) {
+                updateStatus("Cannot transfer. Empty room data is missing.", true);
+                return;
+            }
             updateStatus("Transferring objects...");
-            emptyCanvas.clear();
-            emptyCanvas.setBackgroundColor('#eee', emptyCanvas.renderAll.bind(emptyCanvas));
-            fabric.Image.fromURL(emptyRoomImageUrl, (img) => {
-                const scale = canvasWidth / img.width;
-                emptyCanvas.setWidth(canvasWidth).setHeight(img.height * scale);
-                emptyCanvas.setBackgroundImage(img, emptyCanvas.renderAll.bind(emptyCanvas), { scaleX: scale, scaleY: scale });
-                stagedCanvas.getObjects().forEach(obj => {
-                    obj.clone(clonedObj => emptyCanvas.add(clonedObj));
+
+            const transferBtn = document.getElementById('transfer-btn');
+            transferBtn.disabled = true;
+
+            try {
+                emptyCanvas.clear();
+                emptyCanvas.setBackgroundColor('#eee');
+
+                await new Promise(resolve => {
+                    fabric.Image.fromURL(emptyRoomImageUrl, (img) => {
+                        const scale = canvasWidth / img.width;
+                        emptyCanvas.setWidth(canvasWidth).setHeight(img.height * scale);
+                        emptyCanvas.setBackgroundImage(img, () => resolve(), { scaleX: scale, scaleY: scale });
+                    });
                 });
-            });
-            updateStatus("✅ Transfer complete.");
-            const generateBtn = document.getElementById('generate-btn');
-            if (generateBtn) generateBtn.disabled = false;
-            showTab('empty');
+
+
+                const clonePromises = stagedCanvas.getObjects().map(obj => {
+                    return new Promise(resolve => {
+                        obj.clone(cloned => resolve(cloned));
+                    });
+                });
+
+                const clonedObjects = await Promise.all(clonePromises);
+
+                clonedObjects.forEach(clonedObj => emptyCanvas.add(clonedObj));
+                emptyCanvas.renderAll();
+
+                updateStatus("✅ Transfer complete.");
+                const generateBtn = document.getElementById('generate-btn');
+                if (generateBtn) generateBtn.disabled = false;
+                showTab('empty');
+
+            } catch (error) {
+                updateStatus("Error during transfer: " + error.message, true);
+            } finally {
+                transferBtn.disabled = false;
+            }
         });
 
         document.getElementById('start-over-btn').addEventListener('click', () => {
