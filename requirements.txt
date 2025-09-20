@@ -1,0 +1,11 @@
+
+torch
+torchvision
+transformers
+segment-anything
+numpy
+opencv-python-headless
+Pillow
+google-generativeai
+flask
+pyngrok

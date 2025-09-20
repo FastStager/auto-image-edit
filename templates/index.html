@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Virtual Staging - Pro Editor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            background-color: #f0f2f5;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: auto;
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+        }
+
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .canvases {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: #333;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        input[type="file"],
+        input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 5px;
+            transition: background-color 0.2s;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        .secondary-btn {
+            background-color: #6c757d;
+        }
+
+        .secondary-btn:hover {
+            background-color: #5a6268;
+        }
+
+        .canvas-container {
+            border: 1px solid #ccc;
+            margin-bottom: 15px;
+        }
+
+        #status {
+            margin-top: 15px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .tab-buttons {
+            display: flex;
+            border-bottom: 2px solid #ccc;
+        }
+
+        .tab-button {
+            padding: 10px 15px;
+            cursor: pointer;
+            background: #f1f1f1;
+            border: 1px solid #ccc;
+            border-bottom: none;
+            margin-bottom: -2px;
+        }
+
+        .tab-button.active {
+            background: white;
+            border-bottom: 2px solid white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="controls">
+            <h1>AI Staging Controls</h1>
+
+            <div class="control-group">
+                <h3>1. Upload & Detect</h3>
+                <label for="empty-image">Empty Room Image</label>
+                <input type="file" id="empty-image" accept="image/*">
+                <label for="staged-image">Staged Room Image</label>
+                <input type="file" id="staged-image" accept="image/*">
+                <label for="prompts">Detection Prompts</label>
+                <input type="text" id="prompts" value="sofa, chair, lamp">
+                <button id="detect-btn">🔍 Detect Objects</button>
+            </div>
+
+            <div class="control-group">
+                <h3>2. Edit & Transfer</h3>
+                <button id="start-over-btn" class="secondary-btn">🔄 Start Over (Clear Detections)</button>
+                <p style="margin-top:10px;">Select an object to enable controls.</p>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
+                    <button id="rotate-btn" class="secondary-btn" disabled>Rotate 15°</button>
+                    <button id="flip-x-btn" class="secondary-btn" disabled>Flip ↔</button>
+                </div>
+                <button id="transfer-btn" disabled>📤 Transfer to Empty Room</button>
+            </div>
+            <div class="control-group">
+                <h3>3. Generate</h3>
+                <label for="user-prompt">Custom AI Instructions:</label>
+                <textarea id="user-prompt"
+                    rows="4">Fix the lighting on the furniture to perfectly match the ambient light and shadows of the empty room.</textarea>
+                {% if genai_available %}
+                <button id="generate-btn" disabled>🚀 Generate Photorealistic Image</button>
+                {% else %}
+                <button disabled title="google-generativeai not installed or API key missing">AI Generation
+                    Disabled</button>
+                {% endif %}
+            </div>
+
+            <div id="status">Ready</div>
+        </div>
+
+        <div class="canvases">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="showTab('staged')">📸 Staged Room</button>
+                <button class="tab-button" onclick="showTab('empty')">🏠 Empty Room</button>
+                <button class="tab-button" onclick="showTab('result')">✨ AI Result</button>
+            </div>
+
+            <div id="staged-tab" class="tab-content active"><canvas id="staged-canvas"></canvas></div>
+            <div id="empty-tab" class="tab-content"><canvas id="empty-canvas"></canvas></div>
+            <div id="result-tab" class="tab-content">
+                <h2>Generated Image</h2>
+                <img id="result-image" src="" style="max-width: 100%; border: 1px solid #ccc;">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let stagedCanvas, emptyCanvas;
+        let emptyRoomImageUrl = null;
+        const canvasWidth = 800;
+
+        function initCanvases() {
+            stagedCanvas = new fabric.Canvas('staged-canvas', { backgroundColor: '#eee' });
+            emptyCanvas = new fabric.Canvas('empty-canvas', { backgroundColor: '#eee' });
+
+            [stagedCanvas, emptyCanvas].forEach(canvas => {
+                setupSelectionListeners(canvas);
+            });
+
+            emptyCanvas.on('mouse:down', handleCanvasMouseDown);
+        }
+
+        function drawAnnotations(canvas, imageUrl, objects) {
+            if (!canvas) {
+                console.error("Canvas is not initialized!");
+                return;
+            }
+            canvas.clear();
+            canvas.setBackgroundColor('#eee', canvas.renderAll.bind(canvas));
+            fabric.Image.fromURL(imageUrl, (img) => {
+                const scale = canvasWidth / img.width;
+                canvas.setWidth(canvasWidth).setHeight(img.height * scale);
+                canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), { scaleX: scale, scaleY: scale });
+                objects.forEach(obj => {
+                    fabric.Image.fromURL(obj.url, (furnitureImg) => {
+                        furnitureImg.set({
+                            left: obj.bbox[0] * scale,
+                            top: obj.bbox[1] * scale,
+                            scaleX: (obj.bbox[2] * scale) / furnitureImg.width,
+                            scaleY: (obj.bbox[3] * scale) / furnitureImg.height,
+                            id: obj.id
+                        });
+                        canvas.add(furnitureImg);
+                    }, { crossOrigin: 'anonymous' });
+                });
+            });
+        }
+
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-content, .tab-button').forEach(el => el.classList.remove('active'));
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
+        }
+
+        function updateStatus(message, isError = false) {
+            statusDiv.textContent = message;
+            statusDiv.style.color = isError ? 'red' : 'black';
+        }
+
+        function getActiveCanvas() {
+            const activeTab = document.querySelector('.tab-button.active').getAttribute('onclick').includes('staged') ? 'staged' : 'empty';
+            return activeTab === 'staged' ? stagedCanvas : emptyCanvas;
+        }
+
+        function setupSelectionListeners(canvas) {
+            const buttons = ['rotate-btn', 'flip-x-btn', 'set-facing-btn'];
+            canvas.on('selection:created', () => buttons.forEach(id => document.getElementById(id).disabled = false));
+            canvas.on('selection:cleared', () => buttons.forEach(id => document.getElementById(id).disabled = true));
+        }
+
+        const statusDiv = document.getElementById('status');
+
+        document.getElementById('detect-btn').addEventListener('click', async () => {
+            const emptyImageFile = document.getElementById('empty-image').files[0];
+            const stagedImageFile = document.getElementById('staged-image').files[0];
+            if (!emptyImageFile || !stagedImageFile) { updateStatus("Please upload both images.", true); return; }
+            updateStatus("Detecting objects...");
+            const formData = new FormData();
+            formData.append('empty_image', emptyImageFile);
+            formData.append('staged_image', stagedImageFile);
+            formData.append('prompts', document.getElementById('prompts').value);
+            try {
+                const response = await fetch('/detect', { method: 'POST', body: formData });
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+                emptyRoomImageUrl = data.empty_image_url;
+                drawAnnotations(stagedCanvas, data.staged_image_url, data.objects);
+                updateStatus(`✅ Detection complete! Found ${data.objects.length} objects.`);
+                document.getElementById('transfer-btn').disabled = false;
+            } catch (error) { updateStatus(`Error: ${error.message}`, true); }
+        });
+
+        document.getElementById('transfer-btn').addEventListener('click', () => {
+            if (!emptyRoomImageUrl) { updateStatus("Cannot transfer.", true); return; }
+            updateStatus("Transferring objects...");
+            emptyCanvas.clear();
+            emptyCanvas.setBackgroundColor('#eee', emptyCanvas.renderAll.bind(emptyCanvas));
+            fabric.Image.fromURL(emptyRoomImageUrl, (img) => {
+                const scale = canvasWidth / img.width;
+                emptyCanvas.setWidth(canvasWidth).setHeight(img.height * scale);
+                emptyCanvas.setBackgroundImage(img, emptyCanvas.renderAll.bind(emptyCanvas), { scaleX: scale, scaleY: scale });
+                stagedCanvas.getObjects().forEach(obj => {
+                    obj.clone(clonedObj => emptyCanvas.add(clonedObj));
+                });
+            });
+            updateStatus("✅ Transfer complete.");
+            const generateBtn = document.getElementById('generate-btn');
+            if (generateBtn) generateBtn.disabled = false;
+            showTab('empty');
+        });
+
+        document.getElementById('start-over-btn').addEventListener('click', () => {
+            const canvases = [stagedCanvas, emptyCanvas];
+            canvases.forEach(canvas => {
+                if (canvas) {
+                    canvas.clear();
+                    canvas.setBackgroundColor('#eee', canvas.renderAll.bind(canvas));
+                }
+            });
+            emptyRoomImageUrl = null;
+            isSettingDirection = false;
+            selectedObjectForDirection = null;
+            document.getElementById('transfer-btn').disabled = true;
+            const generateBtn = document.getElementById('generate-btn');
+            if (generateBtn) generateBtn.disabled = true;
+            updateStatus("Cleared. Ready for new detection.");
+        });
+
+        document.getElementById('rotate-btn').addEventListener('click', () => {
+            const canvas = getActiveCanvas();
+            const obj = canvas?.getActiveObject();
+            if (obj) { obj.rotate(obj.angle + 15); canvas.renderAll(); }
+        });
+
+        document.getElementById('flip-x-btn').addEventListener('click', () => {
+            const canvas = getActiveCanvas();
+            const obj = canvas?.getActiveObject();
+            if (obj) { obj.toggle('flipX'); canvas.renderAll(); }
+        });
+
+        const generateBtn = document.getElementById('generate-btn');
+        if (generateBtn) {
+            generateBtn.addEventListener('click', async () => {
+                generateBtn.disabled = true;
+
+                let seconds = 0;
+                const timerInterval = setInterval(() => {
+                    seconds++;
+                    const currentStatus = statusDiv.textContent.split('(')[0];
+                    statusDiv.textContent = `${currentStatus} (${seconds}s)`;
+                }, 1000);
+
+                try {
+                    updateStatus("Composing final image for AI...");
+                    const createBlob = (canvas) => {
+                        return new Promise(resolve => {
+                            canvas.getObjects().forEach(obj => obj.set('hasControls', false));
+                            canvas.discardActiveObject().renderAll();
+                            canvas.getElement().toBlob(blob => {
+                                canvas.getObjects().forEach(obj => obj.set('hasControls', true));
+                                canvas.renderAll();
+                                resolve(blob);
+                            });
+                        });
+                    };
+                    const compositeBlob = await createBlob(emptyCanvas);
+
+                    updateStatus("Composition complete. Sending to AI...");
+                    const userPrompt = document.getElementById('user-prompt').value;
+                    const formData = new FormData();
+                    formData.append('composite_image', compositeBlob, 'composite.png');
+                    formData.append('user_prompt', userPrompt);
+
+                    const response = await fetch('/run_ai', { method: 'POST', body: formData });
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error);
+
+                    document.getElementById('result-image').src = data.result_image_url;
+                    showTab('result');
+                    updateStatus(`✅ AI Edit Complete!`);
+
+                } catch (e) {
+                    updateStatus(`Error: ${e.message}`, true);
+                } finally {
+                    clearInterval(timerInterval);
+                    generateBtn.disabled = false;
+                }
+            });
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                const canvas = getActiveCanvas();
+                const activeObject = canvas?.getActiveObject();
+                if (activeObject) {
+                    canvas.remove(activeObject);
+                    canvas.discardActiveObject().renderAll();
+                }
+            }
+        });
+
+        window.onload = initCanvases;
+    </script>
+
+</body>
+
+</html>
