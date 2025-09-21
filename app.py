@@ -18,7 +18,7 @@ except ImportError:
 
 import config
 from models import load_models
-from image_processing import run_detection_and_populate_editor
+from image_processing import run_detection_and_populate_editor, remove_background_and_add_border
 
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -72,6 +72,8 @@ def detect_objects():
         processor=hf_gd_processor, model=hf_gd_model, predictor=sam_predictor
     )
     
+    remove_background_and_add_border()
+    
     annotations = config.detection_results.get("staged_annotations", [])
     
     cutout_objects = []
@@ -108,49 +110,52 @@ def detect_objects():
         'objects': cutout_objects 
     })
 
-@app.route('/prepare_ai', methods=['POST'])
-def prepare_for_ai():
-    data = request.json
-    final_objects = data.get('objects', [])
-
-    staged_img = config.detection_results.get("staged_image")
-    if not staged_img:
-        return jsonify({'error': 'Staged image not found. Run detection first.'}), 400
-    
-    staged_np = np.array(staged_img)
-    transparent_bg = np.zeros((staged_np.shape[0], staged_np.shape[1], 4), dtype=np.uint8)
-
-    final_annotations_for_gemini = []
-    for obj_data in final_objects:
-        contour = np.array(obj_data['contour']).astype(np.int32)
-        
-        mask = np.zeros(staged_np.shape[:2], dtype=np.uint8)
-        cv2.drawContours(mask, [contour], -1, 255, -1)
-        
-        object_pixels = np.where(mask[..., None] == 255, staged_np, 0)
-        
-        transparent_bg = np.where(mask[..., None] == 255, cv2.cvtColor(object_pixels, cv2.COLOR_RGB2RGBA), transparent_bg)
-
-        final_annotations_for_gemini.append({
-            'bbox': cv2.boundingRect(contour),
-            'color': obj_data['color']
-        })
-        
-    result_pil = Image.fromarray(transparent_bg)
-    config.detection_results["staged_image_bg_removed"] = result_pil
-    config.detection_results["empty_annotations"] = final_annotations_for_gemini
-
-    return jsonify({'status': f'Prepared {len(final_annotations_for_gemini)} objects for AI.'})
 @app.route('/run_ai', methods=['POST'])
 def run_ai_edit_endpoint():
-    if 'composite_image' not in request.files:
-        return jsonify({'error': 'Missing composite image.'}), 400
+    data = request.json
+    if not data or 'objects' not in data:
+        return jsonify({'error': 'Missing object data in request.'}), 400
 
-    composite_img_file = request.files['composite_image']
-    user_prompt = request.form.get('user_prompt', 'Ensure lighting is realistic.')
-    composite_pil = Image.open(composite_img_file.stream).convert("RGB")
+    final_objects = data.get('objects', [])
+    user_prompt = data.get('user_prompt', 'Ensure lighting is realistic.')
 
-    result_image, status_message = run_enhanced_ai_edit(composite_pil, user_prompt)
+    empty_room_img = config.detection_results.get("empty_image")
+    furniture_img = config.detection_results.get("staged_image_bg_removed")
+
+    if not empty_room_img or not furniture_img:
+        return jsonify({'error': 'Base images not found. Please run detection first.'}), 400
+
+    circle_annotations = []
+    original_annots_by_id = {
+        str(annot['id']): annot for annot in config.detection_results.get("staged_annotations", [])
+    }
+    
+    canvas_width = 800 
+    scale_factor = canvas_width / empty_room_img.width
+
+    for obj_data in final_objects:
+        obj_id = str(obj_data.get('id'))
+        original_annot = original_annots_by_id.get(obj_id)
+        if not original_annot:
+            continue
+        
+        x = int(obj_data['left'] / scale_factor)
+        y = int(obj_data['top'] / scale_factor)
+        w = int(obj_data['width'] / scale_factor)
+        h = int(obj_data['height'] / scale_factor)
+
+        circle_annotations.append({
+            'bbox': (x, y, w, h),
+            'color': original_annot['color']
+        })
+    
+    empty_room_with_circles = draw_circles_on_image(empty_room_img, circle_annotations)
+    
+    result_image, status_message = run_enhanced_ai_edit(
+        empty_room_with_circles,
+        furniture_img,
+        user_prompt
+    )
 
     if result_image is None:
         return jsonify({'error': status_message}), 500

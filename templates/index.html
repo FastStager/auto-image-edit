@@ -165,7 +165,7 @@
             <div class="control-group">
                 <h3>3. Generate</h3>
                 <label for="user-prompt">Custom AI Instructions:</label>
-                <textarea id="user-prompt" rows="4"
+                <textarea id="user-prompt" rows="4" style="width:100%; box-sizing: border-box;"
                     placeholder="Optional: Add lighting or style changes... e.g., 'Make the lighting warmer'"></textarea>
                 {% if genai_available %}
                 <button id="generate-btn" disabled>🚀 Generate Photorealistic Image</button>
@@ -281,10 +281,10 @@
             const objectsToTransfer = stagedCanvas.getObjects().map(obj => ({
                 url: obj.getSrc(),
                 bbox: [obj.left, obj.top, obj.width * obj.scaleX, obj.height * obj.scaleY],
-                id: obj.id
+                id: parseInt(obj.id.split('-')[1], 10)
             }));
 
-            drawCutouts(emptyCanvas, emptyRoomImageUrl, objectsToTransfer);
+            drawCutouts(emptyCanvas, emptyRoomImageUrl, objectsToTransfer.map(o => ({ ...o, bbox: [o.bbox[0], o.bbox[1], o.bbox[2], o.bbox[3]] })));
 
             updateStatus("✅ Transfer complete.");
             const generateBtn = document.getElementById('generate-btn');
@@ -320,26 +320,35 @@
                 const timerInterval = setInterval(() => { seconds++; updateStatus(`🚀 AI is processing... (${seconds}s)`); }, 1000);
 
                 try {
-                    updateStatus("Composing final image for AI...");
-                    const compositeBlob = await new Promise(resolve => {
-                        emptyCanvas.getObjects().forEach(obj => obj.set('hasControls', false));
-                        emptyCanvas.discardActiveObject().renderAll();
-                        emptyCanvas.getElement().toBlob(blob => {
-                            emptyCanvas.getObjects().forEach(obj => obj.set('hasControls', true));
-                            emptyCanvas.renderAll();
-                            resolve(blob);
-                        });
-                    });
+                    updateStatus("Preparing object data for AI...");
+                    const finalObjects = emptyCanvas.getObjects().map(obj => {
+                        const objId = obj.id ? parseInt(obj.id.split('-')[1], 10) : null;
+                        return {
+                            id: objId,
+                            left: obj.left,
+                            top: obj.top,
+                            width: obj.width * obj.scaleX,
+                            height: obj.height * obj.scaleY,
+                            angle: obj.angle,
+                            flipX: obj.flipX
+                        };
+                    }).filter(obj => obj.id !== null);
 
-                    updateStatus("Composition complete. Sending to AI...");
+                    if (finalObjects.length === 0) {
+                        throw new Error("No objects found on the empty room canvas to generate.");
+                    }
+
+                    updateStatus("Data prepared. Sending to AI...");
                     const userPrompt = document.getElementById('user-prompt').value;
-                    const formData = new FormData();
-                    formData.append('composite_image', compositeBlob, 'composite.png');
-                    formData.append('user_prompt', userPrompt);
+                    const payload = {
+                        objects: finalObjects,
+                        user_prompt: userPrompt
+                    };
 
                     const response = await fetch('/run_ai', {
                         method: 'POST',
-                        body: formData
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
                     });
 
                     const data = await response.json();

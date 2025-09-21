@@ -7,7 +7,7 @@ if GENAI_AVAILABLE:
     import google.generativeai as genai
 
 
-def run_enhanced_ai_edit(composite_image: Image.Image, user_prompt: str):
+def run_enhanced_ai_edit(empty_room_with_circles: Image.Image, furniture_image: Image.Image, user_prompt: str):
     if not GENAI_AVAILABLE:
         return None, "❌ Gemini library not found."
 
@@ -15,41 +15,16 @@ def run_enhanced_ai_edit(composite_image: Image.Image, user_prompt: str):
     if not api_key:
         return None, "❌ GOOGLE_AI_STUDIO_API_KEY not found."
 
-    text_prompt = f"""You are a world-class AI Photo Editor and VFX Compositor.
+    base_prompt = "Place each furniture item from the staged image at the location of its corresponding colored circle in the empty room. Scale, rotate, and orient each piece to match the room’s perspective and layout. After placement, remove all colored circles and clean the background completely. Re-render furniture with correct lighting, shadows, reflections, and seamless blending so the final image looks like a natural photograph."
 
-The provided image is a rough draft composition where furniture has been crudely cut out and placed into a room. The furniture contour/outline is visible and should be preserved. Your task is to re-render and integrate it realistically.
-
-### Core Instructions
-1. **Geometry Correction**
-   - Redraw and re-render the furniture object(s) so they align perfectly with the room’s perspective, vanishing points, and floor plane.
-   - Correct scale, angle, and proportions so all legs touch the ground naturally.
-   - Remove skew, floating, or distorted geometry.
-
-2. **Identity Preservation**
-   - Keep the furniture’s essential identity, design, color, and texture.
-   - Do not replace with a new model — only fix the existing one.
-
-3. **Lighting & Integration**
-   - Add physically accurate **contact shadows** where objects meet the floor.
-   - Match ambient light and reflections to the room’s lighting conditions.
-   - Remove cutout edges and blend seamlessly into the scene.
-
-4. **Constraints**
-   - Do **not** change the camera position, room architecture, or global composition.
-   - Furniture should remain in the same 2D screen position.
-
-### Final Creative Step
-After geometry and lighting corrections, apply this user instruction: "{user_prompt}".
-
-Execute with precision as if using a professional rendering engine.
-"""
+    final_prompt = f"{base_prompt}\n\nAdditionally, apply this creative instruction: \"{user_prompt}\"" if user_prompt else base_prompt
 
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-2.5-flash-image-preview")
 
         response = model.generate_content(
-            [composite_image, text_prompt]
+            [empty_room_with_circles, furniture_image, final_prompt]
         )
 
         if not (response.candidates and response.candidates[0].content and response.candidates[0].content.parts):
