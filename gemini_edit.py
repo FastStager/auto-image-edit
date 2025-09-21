@@ -40,7 +40,7 @@ def run_enhanced_ai_edit(composite_image: Image.Image, marker_image: Image.Image
     """
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash-image-preview")
+        model = genai.GenerativeModel("gemini-2.5-flash-image-preview")
 
 
         response = model.generate_content(
