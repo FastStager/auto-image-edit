@@ -39,7 +39,7 @@ Execute this with the precision of a high-end rendering engine.
 """
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash-image-preview")
+        model = genai.GenerativeModel("gemini-2.5-flash-image-preview")
 
         response = model.generate_content(
             [composite_image, text_prompt]
