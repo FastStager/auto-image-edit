@@ -315,34 +315,12 @@
         const generateBtn = document.getElementById('generate-btn');
         if (generateBtn) {
             generateBtn.addEventListener('click', async () => {
-                if (!emptyRoomImageUrl || emptyCanvas.getObjects().length === 0) {
-                    updateStatus("Error: No objects or empty room data to generate from.", true);
-                    return;
-                }
-
                 generateBtn.disabled = true;
                 let seconds = 0;
                 const timerInterval = setInterval(() => { seconds++; updateStatus(`🚀 AI is processing... (${seconds}s)`); }, 1000);
 
                 try {
-                    const emptyCanvasScale = emptyCanvas.backgroundImage.scaleX;
-                    const finalObjects = emptyCanvas.getObjects().map(obj => {
-                        const bbox = obj.getBoundingRect();
-                        return {
-                            id: obj.id,
-                            bbox: [
-                                bbox.left / emptyCanvasScale, bbox.top / emptyCanvasScale,
-                                bbox.width / emptyCanvasScale, bbox.height / emptyCanvasScale
-                            ]
-                        };
-                    });
-
-                    const payload = {
-                        objects: finalObjects,
-                        user_prompt: document.getElementById('user-prompt').value,
-                        empty_image_url: emptyRoomImageUrl
-                    };
-
+                    updateStatus("Composing final image for AI...");
                     const compositeBlob = await new Promise(resolve => {
                         emptyCanvas.getObjects().forEach(obj => obj.set('hasControls', false));
                         emptyCanvas.discardActiveObject().renderAll();
@@ -353,9 +331,11 @@
                         });
                     });
 
+                    updateStatus("Composition complete. Sending to AI...");
+                    const userPrompt = document.getElementById('user-prompt').value;
                     const formData = new FormData();
                     formData.append('composite_image', compositeBlob, 'composite.png');
-                    formData.append('payload', JSON.stringify(payload));
+                    formData.append('user_prompt', userPrompt);
 
                     const response = await fetch('/run_ai', {
                         method: 'POST',

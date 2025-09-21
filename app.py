@@ -141,44 +141,19 @@ def prepare_for_ai():
     config.detection_results["empty_annotations"] = final_annotations_for_gemini
 
     return jsonify({'status': f'Prepared {len(final_annotations_for_gemini)} objects for AI.'})
-
 @app.route('/run_ai', methods=['POST'])
 def run_ai_edit_endpoint():
     if 'composite_image' not in request.files:
         return jsonify({'error': 'Missing composite image.'}), 400
-    
+
     composite_img_file = request.files['composite_image']
-    payload_str = request.form.get('payload', '{}')
-    data = json.loads(payload_str)
-    
-    final_objects = data.get('objects', [])
-    user_prompt = data.get('user_prompt', 'Fix lighting and shadows.')
-    empty_image_url = data.get('empty_image_url')
-
-    if not all([final_objects, user_prompt, empty_image_url]):
-        return jsonify({'error': 'Missing final objects data or empty image URL.'}), 400
-
-    empty_image_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(empty_image_url))
-    if not os.path.exists(empty_image_path):
-        return jsonify({'error': 'Source empty image not found. Please re-detect.'}), 500
-
+    user_prompt = request.form.get('user_prompt', 'Fix lighting and shadows.')
     composite_pil = Image.open(composite_img_file.stream).convert("RGB")
 
-    marker_image_pil = Image.open(empty_image_path).convert("RGB")
-    marker_draw = ImageDraw.Draw(marker_image_pil)
-    circle_colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
-    
-    for i, obj in enumerate(final_objects):
-        x, y, w, h = obj['bbox']
-        center_x, center_y = x + w / 2, y + h / 2
-        radius = min(w, h) / 4
-        color = circle_colors[i % len(circle_colors)]
-        ellipse_bbox = [center_x - radius, center_y - radius, center_x + radius, center_y + radius]
-        marker_draw.ellipse(ellipse_bbox, fill=color)
+    result_image, status_message = run_enhanced_ai_edit(composite_pil, user_prompt)
 
-    result_image, status_message = run_enhanced_ai_edit(composite_pil, marker_image_pil, user_prompt)
-
-    if result_image is None: return jsonify({'error': status_message}), 500
+    if result_image is None:
+        return jsonify({'error': status_message}), 500
 
     result_filename = f"result_{uuid.uuid4()}.png"
     result_filepath = os.path.join(app.config['UPLOAD_FOLDER'], result_filename)
