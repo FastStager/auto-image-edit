@@ -12,30 +12,14 @@ def run_enhanced_ai_edit(composite_image: Image.Image, user_prompt: str):
     api_key = os.getenv("GOOGLE_AI_STUDIO_API_KEY")
     if not api_key:
         return None, "❌ GOOGLE_AI_STUDIO_API_KEY not found."
+    
     text_prompt = f"""
-**ROLE:** You are a world-class AI Photo Editor and VFX Compositor.
-
-**CONTEXT:** The image I am providing is a "rough draft" composition. It contains furniture that has been crudely cut out and placed into a room. This is NOT a finished image. It is flawed and needs to be fixed.
-
-**PRIMARY OBJECTIVE:** Your main task is to identify the flawed furniture and perform a complete generative re-rendering of it in place.
-
-**YOUR MANDATORY STEP-BY-STEP WORKFLOW:**
-1.  **Analyze and Identify:** Analyze the entire composition. Identify the furniture object(s) that are roughly placed in the room.
-2.  **Redraw and Re-render (The Core Task):** You MUST redraw and re-render the furniture. This is a generative action, not a simple blend. Your re-rendering must:
-    -   Perfectly match the room’s perspective, floor plane, and vanishing points.
-    -   Preserve the essential identity, color, and texture of the original furniture.
-    -   Adjust the scale, angle, and proportions for absolute realism. A leg not touching the ground is an unacceptable failure.
-3.  **Integrate with Scene:** After re-rendering, you must perfectly integrate the new furniture into the room with:
-    -   Physically accurate contact shadows, reflections, and ambient light.
-    -   Seamless edges with no cutout artifacts.
-4.  **Apply User Direction:** After all technical corrections are complete, apply this final creative instruction from the user: "{user_prompt}"
-
-**ABSOLUTE CONSTRAINTS (DO NOT VIOLATE):**
--   **AVOID LAZY BLENDING:** You are strictly forbidden from simply blurring the edges, adding a drop shadow, or making minor adjustments. This is a generative re-rendering task.
--   **PRESERVE COMPOSITION:** Do not change the camera position, room architecture, or the global composition. The furniture's final 2D screen position must be the same as in the rough draft.
--   **AVOID REPLACEMENT:** Do not replace the furniture with a different model. Re-render the *same* piece of furniture correctly.
-
-Execute this with the precision of a high-end rendering engine.
+Analyze this composition. Identify the furniture object that has been roughly placed in the room. 
+Redraw and re-render the furniture so it perfectly matches the room’s perspective, floor plane, and vanishing points. 
+Adjust its scale, angle, and proportions for realism while preserving its identity, color, and texture. 
+Integrate it seamlessly into the scene with correct contact shadows, reflections, ambient light, and smooth edges. 
+Do not change the camera position, room architecture, or global composition. 
+After completing the technical corrections, apply this final instruction: "{user_prompt}".
 """
     try:
         genai.configure(api_key=api_key)
@@ -47,6 +31,7 @@ Execute this with the precision of a high-end rendering engine.
         
         if not (response.candidates and response.candidates[0].content and response.candidates[0].content.parts):
             return None, f"❌ AI response is empty or malformed."
+        
         image_parts = [p.inline_data.data for p in response.candidates[0].content.parts if p.inline_data]
         if image_parts:
             result_image = Image.open(BytesIO(image_parts[0]))
