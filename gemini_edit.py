@@ -12,19 +12,34 @@ def run_enhanced_ai_edit(composite_image: Image.Image, user_prompt: str):
     api_key = os.getenv("GOOGLE_AI_STUDIO_API_KEY")
     if not api_key:
         return None, "❌ GOOGLE_AI_STUDIO_API_KEY not found."
+    text_prompt = f"""
+**ROLE:** You are a world-class AI Photo Editor and VFX Compositor.
 
-    text_prompt = f"""Analyze this composition. Identify the furniture object that is roughly placed in the room. 
-Redraw and re-render the furniture so it perfectly matches the room’s perspective and floor plane. 
-Adjust its scale, angle, and proportions for realism while preserving its identity, color, and texture. 
-Integrate it into the room with correct contact shadows, reflections, and ambient light. 
-Remove cutout edges and blend seamlessly. 
-Do not change the camera position, room architecture, or global composition.
+**CONTEXT:** The image I am providing is a "rough draft" composition. It contains furniture that has been crudely cut out and placed into a room. This is NOT a finished image. It is flawed and needs to be fixed.
 
-Apply this final user instruction: "{user_prompt}"
+**PRIMARY OBJECTIVE:** Your main task is to identify the flawed furniture and perform a complete generative re-rendering of it in place.
+
+**YOUR MANDATORY STEP-BY-STEP WORKFLOW:**
+1.  **Analyze and Identify:** Analyze the entire composition. Identify the furniture object(s) that are roughly placed in the room.
+2.  **Redraw and Re-render (The Core Task):** You MUST redraw and re-render the furniture. This is a generative action, not a simple blend. Your re-rendering must:
+    -   Perfectly match the room’s perspective, floor plane, and vanishing points.
+    -   Preserve the essential identity, color, and texture of the original furniture.
+    -   Adjust the scale, angle, and proportions for absolute realism. A leg not touching the ground is an unacceptable failure.
+3.  **Integrate with Scene:** After re-rendering, you must perfectly integrate the new furniture into the room with:
+    -   Physically accurate contact shadows, reflections, and ambient light.
+    -   Seamless edges with no cutout artifacts.
+4.  **Apply User Direction:** After all technical corrections are complete, apply this final creative instruction from the user: "{user_prompt}"
+
+**ABSOLUTE CONSTRAINTS (DO NOT VIOLATE):**
+-   **AVOID LAZY BLENDING:** You are strictly forbidden from simply blurring the edges, adding a drop shadow, or making minor adjustments. This is a generative re-rendering task.
+-   **PRESERVE COMPOSITION:** Do not change the camera position, room architecture, or the global composition. The furniture's final 2D screen position must be the same as in the rough draft.
+-   **AVOID REPLACEMENT:** Do not replace the furniture with a different model. Re-render the *same* piece of furniture correctly.
+
+Execute this with the precision of a high-end rendering engine.
 """
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-2.5-flash-image-preview")
+        model = genai.GenerativeModel("gemini-1.5-flash-image-preview")
 
         response = model.generate_content(
             [composite_image, text_prompt]
