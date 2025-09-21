@@ -165,8 +165,8 @@
             <div class="control-group">
                 <h3>3. Generate</h3>
                 <label for="user-prompt">Custom AI Instructions:</label>
-                <textarea id="user-prompt"
-                    rows="4">Fix the lighting on the furniture to perfectly match the ambient light and shadows of the empty room.</textarea>
+                <textarea id="user-prompt" rows="4"
+                    placeholder="Optional: Add lighting or style changes... e.g., 'Make the lighting warmer'"></textarea>
                 {% if genai_available %}
                 <button id="generate-btn" disabled>🚀 Generate Photorealistic Image</button>
                 {% else %}

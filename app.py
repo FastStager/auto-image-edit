@@ -147,7 +147,7 @@ def run_ai_edit_endpoint():
         return jsonify({'error': 'Missing composite image.'}), 400
 
     composite_img_file = request.files['composite_image']
-    user_prompt = request.form.get('user_prompt', 'Fix lighting and shadows.')
+    user_prompt = request.form.get('user_prompt', 'Ensure lighting is realistic.')
     composite_pil = Image.open(composite_img_file.stream).convert("RGB")
 
     result_image, status_message = run_enhanced_ai_edit(composite_pil, user_prompt)
