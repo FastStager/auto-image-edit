@@ -144,7 +144,13 @@ def prepare_for_ai():
 
 @app.route('/run_ai', methods=['POST'])
 def run_ai_edit_endpoint():
-    data = request.json
+    if 'composite_image' not in request.files:
+        return jsonify({'error': 'Missing composite image.'}), 400
+    
+    composite_img_file = request.files['composite_image']
+    payload_str = request.form.get('payload', '{}')
+    data = json.loads(payload_str)
+    
     final_objects = data.get('objects', [])
     user_prompt = data.get('user_prompt', 'Fix lighting and shadows.')
     empty_image_url = data.get('empty_image_url')
@@ -153,53 +159,24 @@ def run_ai_edit_endpoint():
         return jsonify({'error': 'Missing final objects data or empty image URL.'}), 400
 
     empty_image_path = os.path.join(app.config['UPLOAD_FOLDER'], os.path.basename(empty_image_url))
-    original_cutout_paths = config.detection_results.get('original_cutouts', [])
+    if not os.path.exists(empty_image_path):
+        return jsonify({'error': 'Source empty image not found. Please re-detect.'}), 500
 
-    if not os.path.exists(empty_image_path) or not original_cutout_paths:
-        return jsonify({'error': 'Source images not found. Please re-detect.'}), 500
+    composite_pil = Image.open(composite_img_file.stream).convert("RGB")
 
-    final_object_details = {}
-    for obj in final_objects:
-        obj_id = int(obj['id'].split('-')[-1]) 
-        for path in original_cutout_paths:
-            if f"cutout_{obj_id}.png" in path:
-                final_object_details[obj_id] = {
-                    'path': path,
-                    'bbox': obj['bbox']
-                }
-                break
-    
-    circle_colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
-    
     marker_image_pil = Image.open(empty_image_path).convert("RGB")
     marker_draw = ImageDraw.Draw(marker_image_pil)
+    circle_colors = ["#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF"]
     
-    cutout_images = [Image.open(details['path']) for details in final_object_details.values()]
-    max_w = max(img.width for img in cutout_images) if cutout_images else 0
-    max_h = max(img.height for img in cutout_images) if cutout_images else 0
-    staged_sheet_pil = Image.new('RGBA', (max_w * len(cutout_images), max_h))
-    staged_draw = ImageDraw.Draw(staged_sheet_pil)
-
-    current_x = 0
-    for i, (obj_id, details) in enumerate(final_object_details.items()):
+    for i, obj in enumerate(final_objects):
+        x, y, w, h = obj['bbox']
+        center_x, center_y = x + w / 2, y + h / 2
+        radius = min(w, h) / 4
         color = circle_colors[i % len(circle_colors)]
-        
-        x, y, w, h = details['bbox']
-        marker_center_x, marker_center_y = x + w / 2, y + h / 2
-        marker_radius = min(w, h) / 4
-        marker_bbox = [marker_center_x - marker_radius, marker_center_y - marker_radius, marker_center_x + marker_radius, marker_center_y + marker_radius]
-        marker_draw.ellipse(marker_bbox, fill=color)
+        ellipse_bbox = [center_x - radius, center_y - radius, center_x + radius, center_y + radius]
+        marker_draw.ellipse(ellipse_bbox, fill=color)
 
-        cutout_img = Image.open(details['path'])
-        staged_sheet_pil.paste(cutout_img, (current_x, 0))
-        
-        sheet_center_x, sheet_center_y = current_x + cutout_img.width / 2, cutout_img.height / 2
-        sheet_radius = min(cutout_img.width, cutout_img.height) / 5
-        sheet_bbox = [sheet_center_x - sheet_radius, sheet_center_y - sheet_radius, sheet_center_x + sheet_radius, sheet_center_y + sheet_radius]
-        staged_draw.ellipse(sheet_bbox, fill=color)
-        current_x += max_w
-
-    result_image, status_message = run_enhanced_ai_edit(staged_sheet_pil, marker_image_pil, user_prompt)
+    result_image, status_message = run_enhanced_ai_edit(composite_pil, marker_image_pil, user_prompt)
 
     if result_image is None: return jsonify({'error': status_message}), 500
 

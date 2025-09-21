@@ -343,10 +343,23 @@
                         empty_image_url: emptyRoomImageUrl
                     };
 
+                    const compositeBlob = await new Promise(resolve => {
+                        emptyCanvas.getObjects().forEach(obj => obj.set('hasControls', false));
+                        emptyCanvas.discardActiveObject().renderAll();
+                        emptyCanvas.getElement().toBlob(blob => {
+                            emptyCanvas.getObjects().forEach(obj => obj.set('hasControls', true));
+                            emptyCanvas.renderAll();
+                            resolve(blob);
+                        });
+                    });
+
+                    const formData = new FormData();
+                    formData.append('composite_image', compositeBlob, 'composite.png');
+                    formData.append('payload', JSON.stringify(payload));
+
                     const response = await fetch('/run_ai', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                        body: formData
                     });
 
                     const data = await response.json();
