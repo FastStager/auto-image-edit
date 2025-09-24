@@ -14,7 +14,7 @@ try:
     KAGGLE_ENV = True
 except ImportError:
     KAGGLE_ENV = False
-    print("Kaggle secrets not found. Assuming local environment.")
+    print("Kagle secrets not found. Assuming local environment.")
 
 import config
 from models import load_models
@@ -77,7 +77,7 @@ def detect_objects():
     annotations = config.detection_results.get("staged_annotations", [])
     
     cutout_objects = []
-    original_cutout_paths = []
+    original_cutouts_by_id = {}
     for annot in annotations:
         mask = annot['mask']
         x, y, w, h = annot['bbox']
@@ -94,7 +94,7 @@ def detect_objects():
         cutout_filepath = os.path.join(app.config['UPLOAD_FOLDER'], cutout_filename)
         cutout_pil.save(cutout_filepath)
         
-        original_cutout_paths.append(cutout_filepath)
+        original_cutouts_by_id[annot['id']] = cutout_filepath
         
         cutout_objects.append({
             'url': f"/{UPLOAD_FOLDER}/{cutout_filename}",
@@ -102,7 +102,7 @@ def detect_objects():
             'id': annot['id']
         })
     
-    config.detection_results['original_cutouts'] = original_cutout_paths 
+    config.detection_results['original_cutouts_by_id'] = original_cutouts_by_id
 
     return jsonify({
         'staged_image_url': resized_staged_url,
@@ -120,18 +120,58 @@ def run_ai_edit_endpoint():
     user_prompt = data.get('user_prompt', 'Ensure lighting is realistic.')
 
     empty_room_img = config.detection_results.get("empty_image")
-    furniture_img = config.detection_results.get("staged_image_bg_removed")
-
-    if not empty_room_img or not furniture_img:
+    if not empty_room_img:
         return jsonify({'error': 'Base images not found. Please run detection first.'}), 400
+
+    original_cutouts_by_id = config.detection_results.get("original_cutouts_by_id", {})
+    if not original_cutouts_by_id:
+        return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
+        
+    user_arranged_furniture_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
+    canvas_width = 800 
+    scale_factor = canvas_width / empty_room_img.width
+
+    for obj_data in final_objects:
+        obj_id = obj_data.get('id')
+        if obj_id is None: continue
+        
+        cutout_path = original_cutouts_by_id.get(obj_id)
+        if not cutout_path: continue
+        
+        try:
+            furniture_piece_img = Image.open(cutout_path).convert("RGBA")
+        except FileNotFoundError:
+            continue
+            
+        unscaled_width = int(obj_data['width'] / scale_factor)
+        unscaled_height = int(obj_data['height'] / scale_factor)
+        
+        if unscaled_width <= 0 or unscaled_height <= 0: continue
+
+        piece = furniture_piece_img.resize((unscaled_width, unscaled_height), Image.Resampling.LANCZOS)
+
+        if obj_data.get('flipX'):
+            piece = piece.transpose(Image.FLIP_LEFT_RIGHT)
+        
+        angle = obj_data.get('angle', 0)
+        if angle != 0:
+            piece = piece.rotate(-angle, expand=True, resample=Image.BICUBIC)
+
+        unscaled_left = int(obj_data['left'] / scale_factor)
+        unscaled_top = int(obj_data['top'] / scale_factor)
+        
+        center_x = unscaled_left + unscaled_width / 2
+        center_y = unscaled_top + unscaled_height / 2
+        
+        paste_x = int(center_x - piece.width / 2)
+        paste_y = int(center_y - piece.height / 2)
+        
+        user_arranged_furniture_img.paste(piece, (paste_x, paste_y), piece)
 
     circle_annotations = []
     original_annots_by_id = {
         str(annot['id']): annot for annot in config.detection_results.get("staged_annotations", [])
     }
-    
-    canvas_width = 800 
-    scale_factor = canvas_width / empty_room_img.width
 
     for obj_data in final_objects:
         obj_id = str(obj_data.get('id'))
@@ -153,7 +193,7 @@ def run_ai_edit_endpoint():
     
     result_image, status_message = run_enhanced_ai_edit(
         empty_room_with_circles,
-        furniture_img,
+        user_arranged_furniture_img,
         user_prompt
     )
 

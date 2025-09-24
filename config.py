@@ -35,5 +35,5 @@ detection_results: dict[str, object] = {
     "selected_empty": None,
     "next_id": 1,
     "generated_images": [],
-    "original_cutouts": [] 
+    "original_cutouts_by_id": {} 
 }
