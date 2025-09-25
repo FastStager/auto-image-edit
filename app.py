@@ -128,33 +128,22 @@ def run_ai_edit_endpoint():
     if not original_cutouts_by_id:
         return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
         
-    # The Blueprint: Empty room + vector instructions
-    blueprint_img = empty_room_img.copy()
-    draw = ImageDraw.Draw(blueprint_img, "RGBA")
-
-    # The Palette: Clean assets on a transparent background
-    furniture_palette_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
+    # Create the "Crude Collage" by starting with the empty room
+    crude_collage_img = empty_room_img.copy().convert("RGBA")
 
     canvas_width = 800 
     scale_factor = empty_room_img.width / canvas_width
-    
-    original_annots_by_id = {
-        annot['id']: annot for annot in config.detection_results.get("staged_annotations", [])
-    }
 
-    # We need to place assets on the palette without overlap so the AI sees them clearly
-    palette_x_offset, palette_y_offset = 10, 10
-
+    # The order of objects in final_objects from fabric.js respects the layering (last is on top)
     for obj_data in final_objects:
         obj_id = obj_data.get('id')
         if obj_id is None: continue
         
-        original_annot = original_annots_by_id.get(obj_id)
         cutout_path = original_cutouts_by_id.get(obj_id)
-        if not cutout_path or not original_annot: continue
+        if not cutout_path: continue
         
         try:
-            original_piece = Image.open(cutout_path).convert("RGBA")
+            furniture_piece_img = Image.open(cutout_path).convert("RGBA")
         except FileNotFoundError:
             continue
             
@@ -165,31 +154,27 @@ def run_ai_edit_endpoint():
         
         if unscaled_width <= 0 or unscaled_height <= 0: continue
 
-        # Draw Blueprint Instructions
-        color = tuple(original_annot['color'])
-        # Use a semi-transparent fill for the rectangle
-        rect_fill_color = color + (100,) 
-        rect_coords = (unscaled_left, unscaled_top, unscaled_left + unscaled_width, unscaled_top + unscaled_height)
-        draw.rectangle(rect_coords, fill=rect_fill_color, outline=color, width=3)
+        piece = furniture_piece_img.resize((unscaled_width, unscaled_height), Image.Resampling.LANCZOS)
+
+        if obj_data.get('flipX'):
+            piece = piece.transpose(Image.FLIP_LEFT_RIGHT)
         
-        # Draw orientation line
-        center_x = unscaled_left + unscaled_width / 2
-        center_y = unscaled_top + unscaled_height / 2
         angle_deg = obj_data.get('angle', 0)
-        angle_rad = math.radians(angle_deg)
-        line_length = (unscaled_width / 2) * 0.8
-        end_x = center_x + line_length * math.cos(angle_rad)
-        end_y = center_y + line_length * math.sin(angle_rad)
-        draw.line([(center_x, center_y), (end_x, end_y)], fill="white", width=5)
+        piece = piece.rotate(-angle_deg, expand=True, resample=Image.BICUBIC)
 
-        # Add clean asset to the palette
-        furniture_palette_img.paste(original_piece, (palette_x_offset, palette_y_offset), original_piece)
-        palette_y_offset += original_piece.height + 10
+        # Calculate final paste position, accounting for rotation changing the image size
+        paste_x = int(unscaled_left + (unscaled_width - piece.width) / 2)
+        paste_y = int(unscaled_top + (unscaled_height - piece.height) / 2)
+        
+        # Paste the transformed furniture piece directly onto the collage
+        # Using the piece's own alpha channel ensures transparency is handled correctly
+        crude_collage_img.paste(piece, (paste_x, paste_y), piece)
 
+    # Convert back to RGB for the model
+    crude_collage_img = crude_collage_img.convert("RGB")
 
     result_image, status_message = run_enhanced_ai_edit(
-        blueprint_img,
-        furniture_palette_img,
+        crude_collage_img,            
         user_prompt
     )
 
