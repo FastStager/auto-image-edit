@@ -45,8 +45,7 @@ def run_enhanced_ai_edit(reference_collage_image: Image.Image, furniture_assets_
             [reference_collage_image, furniture_assets_image, final_prompt]
         )
 
-        if not (response.candidates and response.candidates[from __future__ import annotations
-0].content and response.candidates[0].content.parts):
+        if not (response.candidates and response.candidates[0].content and response.candidates[0].content.parts):
             return None, "❌ AI response is empty or malformed."
 
         image_parts = [p.inline_data.data for p in response.candidates[0].content.parts if p.inline_data]
