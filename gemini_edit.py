@@ -15,6 +15,15 @@ def run_enhanced_ai_edit(empty_room_with_circles: Image.Image, furniture_image: 
     if not api_key:
         return None, "❌ GOOGLE_AI_STUDIO_API_KEY not found."
 
+    RULES = {
+        "default": [
+            "Ensure all major pathways are at least a feet wide for clear movement.",
+            "Group furniture to create functional, defined zones.",
+            "Do not block natural light sources.",
+            "Balance the visual weight of furniture throughout the room."
+        ]
+    }
+
     base_prompt = (
         "Place each furniture item from the staged image at the location of its corresponding "
         "colored circle in the empty room. Scale, rotate, and orient each piece to match the room’s "
@@ -23,10 +32,12 @@ def run_enhanced_ai_edit(empty_room_with_circles: Image.Image, furniture_image: 
         "image looks like a natural photograph."
     )
 
+    rules_text = " ".join(RULES["default"])
+
     final_prompt = (
-        f"{base_prompt}\n\n Additionally, apply this creative instruction: "
+        f"{base_prompt}\n\nFollow these rules: {rules_text}\n\nAdditionally, apply this creative instruction: "
         f"\"{user_prompt}. Blend seamlessly into the environment as hyper-real. Enhance final result.\""
-        if user_prompt else base_prompt
+        if user_prompt else f"{base_prompt}\n\nFollow these rules: {rules_text}"
     )
     
     try:
