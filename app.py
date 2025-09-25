@@ -12,9 +12,9 @@ from gemini_edit import run_enhanced_ai_edit
 from drawing import draw_circles_on_image
 try:
     from kaggle_secrets import UserSecretsClient
-    KAGGLE_ENV = True
+    KAGGGLE_ENV = True
 except ImportError:
-    KAGGLE_ENV = False
+    KAGGGLE_ENV = False
     print("Kagle secrets not found. Assuming local environment.")
 
 import config
@@ -60,6 +60,8 @@ def detect_objects():
         return jsonify({'error': 'Failed to save files'}), 500
 
     empty_img_pil = Image.open(empty_path)
+    # The staged image is ALWAYS resized to match the empty image dimensions.
+    # This ensures all coordinate systems are consistent from the very beginning.
     staged_img_pil = Image.open(staged_path).convert("RGB").resize(empty_img_pil.size)
     staged_np = np.array(staged_img_pil)
 
@@ -128,14 +130,16 @@ def run_ai_edit_endpoint():
     if not original_cutouts_by_id:
         return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
         
-    # --- New: Create furniture_only_composite_img and guidance_map_img ---
     furniture_only_composite_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
-    guidance_map_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
-    draw_guidance = ImageDraw.Draw(guidance_map_img)
+    # New: A pure black control mask for unambiguous instructions
+    control_mask_img = Image.new('RGB', empty_room_img.size, (0, 0, 0))
+    draw_mask = ImageDraw.Draw(control_mask_img)
 
+    # Robust Scaling: Calculate scale factor based on the actual empty room image dimensions.
+    # This corrects the potential bug where aspect ratios could cause drift.
     canvas_width = 800 
-    scale_factor = canvas_width / empty_room_img.width
-    
+    scale_factor = empty_room_img.width / canvas_width
+
     original_annots_by_id = {
         annot['id']: annot for annot in config.detection_results.get("staged_annotations", [])
     }
@@ -153,8 +157,11 @@ def run_ai_edit_endpoint():
         except FileNotFoundError:
             continue
             
-        unscaled_width = int(obj_data['width'] / scale_factor)
-        unscaled_height = int(obj_data['height'] / scale_factor)
+        # Translate canvas coordinates back to original image coordinates using robust scale factor
+        unscaled_left = int(obj_data['left'] * scale_factor)
+        unscaled_top = int(obj_data['top'] * scale_factor)
+        unscaled_width = int(obj_data['width'] * scale_factor)
+        unscaled_height = int(obj_data['height'] * scale_factor)
         
         if unscaled_width <= 0 or unscaled_height <= 0: continue
 
@@ -163,56 +170,38 @@ def run_ai_edit_endpoint():
         if obj_data.get('flipX'):
             piece = piece.transpose(Image.FLIP_LEFT_RIGHT)
         
-        angle = obj_data.get('angle', 0)
-        if angle != 0:
-            piece = piece.rotate(-angle, expand=True, resample=Image.BICUBIC)
+        # NOTE: Fabric.js `angle` is in degrees, clockwise.
+        angle_deg = obj_data.get('angle', 0)
+        # We rotate the *furniture cutout itself* before pasting.
+        # This gives the model the final intended orientation directly.
+        piece = piece.rotate(-angle_deg, expand=True, resample=Image.BICUBIC)
 
-        unscaled_left = int(obj_data['left'] / scale_factor)
-        unscaled_top = int(obj_data['top'] / scale_factor)
+        # The final position needs to account for the new size of the rotated piece
+        paste_x = int(unscaled_left + (unscaled_width - piece.width) / 2)
+        paste_y = int(unscaled_top + (unscaled_height - piece.height) / 2)
         
-        center_x = unscaled_left + unscaled_width / 2
-        center_y = unscaled_top + unscaled_height / 2
-        
-        paste_x = int(center_x - piece.width / 2)
-        paste_y = int(center_y - piece.height / 2)
-        
-        # --- Draw floor compass on guidance_map_img (NOT on furniture_only_composite_img) ---
-        disk_radius = 30
-        # Position the disk slightly below the furniture's center, implying floor contact
-        disk_center_x = paste_x + piece.width // 2
-        disk_center_y = paste_y + piece.height - (disk_radius // 2) 
-        color = tuple(original_annot['color'])
-        
-        draw_guidance.ellipse(
-            [disk_center_x - disk_radius, disk_center_y - disk_radius, disk_center_x + disk_radius, disk_center_y + disk_radius],
-            fill=color
-        )
-        
-        # Draw rotational pointer line
-        pointer_length = disk_radius * 1.5
-        # Fabric.js angle is in degrees, clockwise. Convert to radians.
-        # 0 degrees is horizontal right. We want "front" to be indicated by the pointer.
-        # We assume 0 degrees rotation means the furniture's "front" faces right.
-        # If the angle increases, it rotates clockwise.
-        # We calculate the end point of the pointer line.
-        angle_rad = math.radians(angle) # Use the raw angle from fabric for pointer direction
-        pointer_end_x = disk_center_x + pointer_length * math.cos(angle_rad)
-        pointer_end_y = disk_center_y + pointer_length * math.sin(angle_rad)
-        draw_guidance.line(
-            [(disk_center_x, disk_center_y), (pointer_end_x, pointer_end_y)],
-            fill="white", 
-            width=5
-        )
-        
-        # --- Paste furniture onto furniture_only_composite_img ---
+        # Paste the final, transformed furniture piece onto its own layer
         furniture_only_composite_img.paste(piece, (paste_x, paste_y), piece)
 
-    
-    # --- Pass three images to the AI model ---
+        # Draw the control signals on the separate black mask image
+        color = tuple(original_annot['color'])
+        # The rectangle represents the final position and area
+        mask_rect = (paste_x, paste_y, paste_x + piece.width, paste_y + piece.height)
+        draw_mask.rectangle(mask_rect, fill=color)
+        
+        # The line represents the user-chosen "front" direction
+        center_x = paste_x + piece.width / 2
+        center_y = paste_y + piece.height / 2
+        line_length = max(piece.width, piece.height) * 0.5
+        angle_rad = math.radians(angle_deg) # Use user's angle directly
+        end_x = center_x + line_length * math.cos(angle_rad)
+        end_y = center_y + line_length * math.sin(angle_rad)
+        draw_mask.line([(center_x, center_y), (end_x, end_y)], fill="white", width=5)
+
     result_image, status_message = run_enhanced_ai_edit(
-        empty_room_img,              # Image 1: The empty room background
-        furniture_only_composite_img, # Image 2: All furniture pieces (transparent background, pre-rotated)
-        guidance_map_img,            # Image 3: The control map with disks and pointers
+        empty_room_img,              
+        furniture_only_composite_img,
+        control_mask_img,            
         user_prompt
     )
 
