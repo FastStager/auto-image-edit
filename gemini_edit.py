@@ -26,7 +26,7 @@ def run_enhanced_ai_edit(ghostly_collage_image: Image.Image, user_prompt: str):
         "**Strict Rules:**\n"
         "- Maintain the general position and size of the ghostly placeholders.\n"
         "- DO NOT add any new furniture not indicated by a ghost.\n"
-- DO NOT remove any furniture indicated by a ghost."
+        "- DO NOT remove any furniture indicated by a ghost."
     )
 
     final_prompt = (
