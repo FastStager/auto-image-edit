@@ -128,8 +128,11 @@ def run_ai_edit_endpoint():
     if not original_cutouts_by_id:
         return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
         
-    user_arranged_furniture_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(user_arranged_furniture_img)
+    # --- New: Create furniture_only_composite_img and guidance_map_img ---
+    furniture_only_composite_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
+    guidance_map_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
+    draw_guidance = ImageDraw.Draw(guidance_map_img)
+
     canvas_width = 800 
     scale_factor = canvas_width / empty_room_img.width
     
@@ -173,37 +176,43 @@ def run_ai_edit_endpoint():
         paste_x = int(center_x - piece.width / 2)
         paste_y = int(center_y - piece.height / 2)
         
-        # Draw floor compass (disk + pointer)
+        # --- Draw floor compass on guidance_map_img (NOT on furniture_only_composite_img) ---
         disk_radius = 30
+        # Position the disk slightly below the furniture's center, implying floor contact
         disk_center_x = paste_x + piece.width // 2
         disk_center_y = paste_y + piece.height - (disk_radius // 2) 
         color = tuple(original_annot['color'])
         
-        draw.ellipse(
+        draw_guidance.ellipse(
             [disk_center_x - disk_radius, disk_center_y - disk_radius, disk_center_x + disk_radius, disk_center_y + disk_radius],
             fill=color
         )
         
         # Draw rotational pointer line
         pointer_length = disk_radius * 1.5
-        # Fabric.js angle is in degrees, clockwise. Convert to radians for math functions.
-        # We subtract 90 degrees because 0 degrees on canvas is 'East', but we want it to point 'North' visually from the center of the base.
-        angle_rad = math.radians(angle - 90) 
+        # Fabric.js angle is in degrees, clockwise. Convert to radians.
+        # 0 degrees is horizontal right. We want "front" to be indicated by the pointer.
+        # We assume 0 degrees rotation means the furniture's "front" faces right.
+        # If the angle increases, it rotates clockwise.
+        # We calculate the end point of the pointer line.
+        angle_rad = math.radians(angle) # Use the raw angle from fabric for pointer direction
         pointer_end_x = disk_center_x + pointer_length * math.cos(angle_rad)
         pointer_end_y = disk_center_y + pointer_length * math.sin(angle_rad)
-        draw.line(
+        draw_guidance.line(
             [(disk_center_x, disk_center_y), (pointer_end_x, pointer_end_y)],
             fill="white", 
             width=5
         )
         
-        # Paste furniture on top of the compass
-        user_arranged_furniture_img.paste(piece, (paste_x, paste_y), piece)
+        # --- Paste furniture onto furniture_only_composite_img ---
+        furniture_only_composite_img.paste(piece, (paste_x, paste_y), piece)
 
     
+    # --- Pass three images to the AI model ---
     result_image, status_message = run_enhanced_ai_edit(
-        empty_room_img,
-        user_arranged_furniture_img,
+        empty_room_img,              # Image 1: The empty room background
+        furniture_only_composite_img, # Image 2: All furniture pieces (transparent background, pre-rotated)
+        guidance_map_img,            # Image 3: The control map with disks and pointers
         user_prompt
     )
 
