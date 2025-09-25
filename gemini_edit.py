@@ -17,15 +17,16 @@ def run_enhanced_ai_edit(empty_room_image: Image.Image, furniture_reference_imag
 
     base_prompt = (
         "You are a photorealistic image editor. You will receive two images: an 'empty room' and a 'furniture reference'.\n"
-        "The 'furniture reference' image contains one or more pieces of furniture. Each piece of furniture is positioned on top of a colored floor disk.\n\n"
-        "**Your instructions are strict and simple:**\n"
-        "1.  **TRANSFER:** For each furniture piece in the 'furniture reference' image, you must transfer it into the 'empty room'.\n"
-        "2.  **POSITION:** The colored disk underneath each piece of furniture indicates its **exact floor position** in the empty room. You MUST place the furniture at this precise location.\n"
-        "3.  **RENDER:** After placing the furniture correctly, adjust its scale, perspective, lighting, and shadows to blend it seamlessly and photorealistically into the room.\n"
-        "4.  **CLEANUP:** You MUST completely remove the colored floor disk from the final image. There should be absolutely no trace of the colored disk left.\n\n"
+        "The 'furniture reference' image contains furniture placed on top of colored floor disks. Each disk has a white pointer line.\n\n"
+        "**Your instructions are strict and must be followed precisely:**\n"
+        "1.  **TRANSFER & POSITION:** For each furniture piece in the 'furniture reference' image, transfer it to the 'empty room'. The colored disk indicates the **exact floor position** where the furniture's base should be.\n"
+        "2.  **ORIENT:** The white line on the disk is a pointer. It indicates the **exact 'front-facing' direction** for the furniture. You MUST orient the furniture to face this direction.\n"
+        "3.  **RENDER:** After placing and orienting the furniture correctly, adjust its scale, perspective, lighting, and shadows to blend it seamlessly and photorealistically into the room.\n"
+        "4.  **CLEANUP:** You MUST completely remove the colored disk and its pointer line from the final image. There should be absolutely no trace of these visual guides.\n\n"
         "**CRITICAL RULES:**\n"
+        "- The disk's position and the pointer's direction are NON-NEGOTIABLE commands.\n"
         "- DO NOT add any new objects, furniture, or decorations.\n"
-        "- DO NOT change the position of the furniture from its disk location.\n"
+        "- DO NOT change the position or orientation of the furniture from its visual guide.\n"
         "- Render ONLY the furniture provided in the reference image."
     )
 
