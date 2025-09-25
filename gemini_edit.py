@@ -7,7 +7,7 @@ if GENAI_AVAILABLE:
     import google.generativeai as genai
 
 
-def run_enhanced_ai_edit(empty_room_image: Image.Image, furniture_assets_image: Image.Image, placement_map_image: Image.Image, user_prompt: str):
+def run_enhanced_ai_edit(crude_collage_image: Image.Image, user_prompt: str):
     if not GENAI_AVAILABLE:
         return None, "❌ Gemini library not found."
 
@@ -16,23 +16,23 @@ def run_enhanced_ai_edit(empty_room_image: Image.Image, furniture_assets_image: 
         return None, "❌ GOOGLE_AI_STUDIO_API_KEY not found."
 
     base_prompt = (
-        "You are an expert photo editor. Your task is to perform a high-fidelity 'in-painting' operation. You will be given three images:\n"
-        "1.  **Background Image:** A clean, empty room.\n"
-        "2.  **Furniture Assets:** An image containing one or more pieces of furniture on a transparent background. These are the assets to be placed.\n"
-        "3.  **Placement Map:** An image of the same empty room, but with solid colored 'ghost' silhouettes drawn on it. This map shows the exact location, size, and orientation for each furniture asset.\n\n"
-        "**Your instructions are simple and strict:**\n"
-        "1.  **Identify:** For each colored silhouette in the 'Placement Map', find the corresponding furniture piece in the 'Furniture Assets' image.\n"
-        "2.  **Replace and Render:** Your main task is to **replace** each colored silhouette with its corresponding furniture piece. The final image should look like the 'Background Image', but with the furniture from 'Furniture Assets' seamlessly rendered in the exact positions indicated by the silhouettes.\n"
-        "3.  **Blend:** Ensure the lighting, shadows, perspective, and reflections on the placed furniture are perfectly matched to the room's environment to create a photorealistic result.\n\n"
-        "**CRITICAL RULES:**\n"
-        "- The final image MUST NOT contain any of the colored silhouettes. They are placeholders to be filled, not objects to be kept.\n"
-        "- DO NOT add any new furniture or objects not provided in the 'Furniture Assets' image.\n"
-        "- DO NOT alter the position, scale, or orientation from what is defined by the silhouettes in the 'Placement Map'."
+        "You are a photorealistic rendering engine. You will receive a single image that is a crude collage of furniture pasted into a room. The furniture has been placed exactly where the user wants it, but it looks fake.\n\n"
+        "**Your ONLY task is to make this collage look like a real photograph.**\n\n"
+        "**What to do:**\n"
+        "1.  **Integrate Lighting:** Analyze the room's light sources and re-render the pasted furniture with perfectly matching lighting, highlights, and shadows.\n"
+        "2.  **Add Realistic Shadows:** Create soft, physically accurate shadows cast by the furniture onto the floor and other objects.\n"
+        "3.  **Correct Perspective:** Make minor adjustments to the furniture's perspective to ensure it perfectly matches the room's geometry.\n"
+        "4.  **Blend Edges:** Seamlessly blend the edges of the furniture into the background.\n\n"
+        "**CRITICAL RULES (FAILURE IF NOT FOLLOWED):**\n"
+        "- **DO NOT MOVE a single piece of furniture.** The position and layering are final and must be preserved.\n"
+        "- **DO NOT ADD any new objects, furniture, or decorations.**\n"
+        "- **DO NOT REMOVE any of the furniture provided in the collage.**\n"
+        "- The final output must be a single, coherent, photorealistic image."
     )
 
     final_prompt = (
         f"{base_prompt}\n\n"
-        f"Finally, apply this user-specified style: \"{user_prompt}\""
+        f"Apply this final user styling: \"{user_prompt}\""
         if user_prompt else base_prompt
     )
     
@@ -40,9 +40,8 @@ def run_enhanced_ai_edit(empty_room_image: Image.Image, furniture_assets_image: 
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-2.5-flash-image-preview")
 
-        # The order of images is critical for the logic of the prompt
         response = model.generate_content(
-            [empty_room_image, furniture_assets_image, placement_map_image, final_prompt]
+            [crude_collage_image, final_prompt]
         )
 
         if not (response.candidates and response.candidates[0].content and response.candidates[0].content.parts):

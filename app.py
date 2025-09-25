@@ -118,7 +118,7 @@ def run_ai_edit_endpoint():
         return jsonify({'error': 'Missing object data in request.'}), 400
 
     final_objects = data.get('objects', [])
-    user_prompt = data.get('user_prompt', 'Ensure lighting is realistic.')
+    user_prompt = data.get('user_prompt', 'Make the final image photorealistic.')
 
     empty_room_img = config.detection_results.get("empty_image")
     if not empty_room_img:
@@ -128,24 +128,19 @@ def run_ai_edit_endpoint():
     if not original_cutouts_by_id:
         return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
         
-    furniture_only_composite_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
-    # "Ghost Image" / Placement Map: A copy of the empty room with colored silhouettes
-    placement_map_img = empty_room_img.copy()
+    # Create the "Crude Collage" by starting with the empty room
+    crude_collage_img = empty_room_img.copy().convert("RGBA")
 
     canvas_width = 800 
     scale_factor = empty_room_img.width / canvas_width
 
-    original_annots_by_id = {
-        annot['id']: annot for annot in config.detection_results.get("staged_annotations", [])
-    }
-
+    # The order of objects in final_objects from fabric.js respects the layering (last is on top)
     for obj_data in final_objects:
         obj_id = obj_data.get('id')
         if obj_id is None: continue
         
-        original_annot = original_annots_by_id.get(obj_id)
         cutout_path = original_cutouts_by_id.get(obj_id)
-        if not cutout_path or not original_annot: continue
+        if not cutout_path: continue
         
         try:
             furniture_piece_img = Image.open(cutout_path).convert("RGBA")
@@ -167,25 +162,19 @@ def run_ai_edit_endpoint():
         angle_deg = obj_data.get('angle', 0)
         piece = piece.rotate(-angle_deg, expand=True, resample=Image.BICUBIC)
 
+        # Calculate final paste position, accounting for rotation changing the image size
         paste_x = int(unscaled_left + (unscaled_width - piece.width) / 2)
         paste_y = int(unscaled_top + (unscaled_height - piece.height) / 2)
         
-        # Paste the final, transformed furniture piece onto its own transparent layer
-        furniture_only_composite_img.paste(piece, (paste_x, paste_y), piece)
+        # Paste the transformed furniture piece directly onto the collage
+        # Using the piece's own alpha channel ensures transparency is handled correctly
+        crude_collage_img.paste(piece, (paste_x, paste_y), piece)
 
-        # Create the solid color "ghost" silhouette
-        color = tuple(original_annot['color'])
-        # Create a solid color image and use the piece's alpha channel as a mask
-        solid_color_fill = Image.new("RGBA", piece.size, color)
-        # We need the alpha channel of the piece as a mask
-        alpha_mask = piece.getchannel('A')
-        # Paste the solid color onto the placement map, using the alpha mask
-        placement_map_img.paste(solid_color_fill, (paste_x, paste_y), alpha_mask)
+    # Convert back to RGB for the model
+    crude_collage_img = crude_collage_img.convert("RGB")
 
     result_image, status_message = run_enhanced_ai_edit(
-        empty_room_img,              
-        furniture_only_composite_img,
-        placement_map_img,            
+        crude_collage_img,            
         user_prompt
     )
 
