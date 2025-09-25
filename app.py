@@ -128,8 +128,8 @@ def run_ai_edit_endpoint():
     if not original_cutouts_by_id:
         return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
         
-    # Start with the empty room for our collage
-    ghostly_collage_img = empty_room_img.copy().convert("RGBA")
+    reference_collage_img = empty_room_img.copy().convert("RGBA")
+    furniture_assets_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
 
     canvas_width = 800 
     scale_factor = empty_room_img.width / canvas_width
@@ -142,7 +142,10 @@ def run_ai_edit_endpoint():
         if not cutout_path: continue
         
         try:
-            furniture_piece_img = Image.open(cutout_path).convert("RGBA")
+            # This is the clean, un-transformed source asset
+            original_piece = Image.open(cutout_path).convert("RGBA")
+            # This will be the user-transformed piece for the collage
+            transformed_piece = original_piece.copy()
         except FileNotFoundError:
             continue
             
@@ -153,32 +156,30 @@ def run_ai_edit_endpoint():
         
         if unscaled_width <= 0 or unscaled_height <= 0: continue
 
-        piece = furniture_piece_img.resize((unscaled_width, unscaled_height), Image.Resampling.LANCZOS)
+        transformed_piece = transformed_piece.resize((unscaled_width, unscaled_height), Image.Resampling.LANCZOS)
 
         if obj_data.get('flipX'):
-            piece = piece.transpose(Image.FLIP_LEFT_RIGHT)
+            transformed_piece = transformed_piece.transpose(Image.FLIP_LEFT_RIGHT)
         
         angle_deg = obj_data.get('angle', 0)
-        piece = piece.rotate(-angle_deg, expand=True, resample=Image.BICUBIC)
+        transformed_piece = transformed_piece.rotate(-angle_deg, expand=True, resample=Image.BICUBIC)
 
-        # Make the piece semi-transparent (a "ghost")
-        alpha = piece.getchannel('A')
-        # Set opacity to ~75%
-        new_alpha_data = (np.array(alpha) * 0.75).astype(np.uint8)
-        new_alpha_channel = Image.fromarray(new_alpha_data, 'L')
-        piece.putalpha(new_alpha_channel)
-
-        paste_x = int(unscaled_left + (unscaled_width - piece.width) / 2)
-        paste_y = int(unscaled_top + (unscaled_height - piece.height) / 2)
+        paste_x = int(unscaled_left + (unscaled_width - transformed_piece.width) / 2)
+        paste_y = int(unscaled_top + (unscaled_height - transformed_piece.height) / 2)
         
-        # Composite the semi-transparent piece onto the main image
-        # This correctly handles layering and transparency
-        ghostly_collage_img.alpha_composite(piece, (paste_x, paste_y))
+        # Paste the transformed piece onto the collage to define position and layering
+        reference_collage_img.paste(transformed_piece, (paste_x, paste_y), transformed_piece)
 
-    ghostly_collage_img = ghostly_collage_img.convert("RGB")
+        # Paste the ORIGINAL, clean piece onto the assets image
+        # We place it at the same spot so the AI can easily associate them.
+        furniture_assets_img.paste(original_piece, (paste_x, paste_y), original_piece)
 
+
+    reference_collage_img = reference_collage_img.convert("RGB")
+    
     result_image, status_message = run_enhanced_ai_edit(
-        ghostly_collage_img,            
+        reference_collage_img,
+        furniture_assets_img,
         user_prompt
     )
 
