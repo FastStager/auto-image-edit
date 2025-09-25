@@ -15,29 +15,20 @@ def run_enhanced_ai_edit(empty_room_with_circles: Image.Image, furniture_image: 
     if not api_key:
         return None, "❌ GOOGLE_AI_STUDIO_API_KEY not found."
 
-    RULES = {
-        "default": [
-            "Ensure all major pathways are at least a feet wide for clear movement.",
-            "Group furniture to create functional, defined zones.",
-            "Do not block natural light sources.",
-            "Balance the visual weight of furniture throughout the room."
-        ]
-    }
-
     base_prompt = (
-        "Place each furniture item from the staged image at the location of its corresponding "
-        "colored circle in the empty room. Scale, rotate, and orient each piece to match the room’s "
-        "perspective and layout. After placement, remove all colored circles and clean the background completely. "
-        "Re-render furniture with correct lighting, shadows, reflections, and seamless blending so the final "
-        "image looks like a natural photograph."
+        "Your task is to place furniture from the second image (the 'furniture image') into the first image (the 'empty room') with extreme precision. "
+        "Follow these steps strictly:\n"
+        "1. For each piece of furniture provided, locate its corresponding colored circle in the empty room.\n"
+        "2. Place the furniture so that its center is **exactly** on the center of its corresponding colored circle. The position of the colored circle is an absolute instruction and must not be altered or ignored.\n"
+        "3. Adjust the scale and perspective of the furniture piece to look realistic *in that specific location*, matching the room's perspective, but do not change its position.\n"
+        "4. After positioning all furniture, completely remove all colored circles from the final image. There should be no trace of them.\n"
+        "5. Re-render the furniture with perfectly integrated lighting, shadows, and reflections to create a seamless, photorealistic final image."
     )
 
-    rules_text = " ".join(RULES["default"])
-
     final_prompt = (
-        f"{base_prompt}\n\nFollow these rules: {rules_text}\n\nAdditionally, apply this creative instruction: "
-        f"\"{user_prompt}. Blend seamlessly into the environment as hyper-real. Enhance final result.\""
-        if user_prompt else f"{base_prompt}\n\nFollow these rules: {rules_text}"
+        f"{base_prompt}\n\nApply this final user instruction: "
+        f"\"{user_prompt}. Ensure the final result is hyper-realistic and perfectly blended.\""
+        if user_prompt else base_prompt
     )
     
     try:
