@@ -1,5 +1,5 @@
-import osfrom io 
-import BytesIO
+import os
+from io import BytesIO
 from PIL import Image
 from config import GENAI_AVAILABLE
 
