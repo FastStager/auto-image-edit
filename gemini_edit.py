@@ -16,14 +16,17 @@ def run_enhanced_ai_edit(crude_collage_image: Image.Image, user_prompt: str):
         return None, "❌ GOOGLE_AI_STUDIO_API_KEY not found."
 
     base_prompt = (
-        "You are a photorealistic rendering specialist. You will receive a single image that is a crude, flat collage. "
-        "The placement, scale, and layering of objects in this collage are the final, desired composition. \n\n"
-        "**Your task is to transform this crude collage into a photorealistic photograph.**\n\n"
+        "You are a photorealistic integration specialist. You will receive a single image that is a crude collage. "
+        "This collage contains the **exact assets** to be used and their **final, correct composition.**\n\n"
+        "**Your task is to make this collage photorealistic by treating it as a final render that needs post-processing.**\n\n"
         "**Instructions:**\n"
-        "1.  For each pasted object in the image, you must **intelligently re-render it in 3D.** This means you must adjust its perspective, 'face angle', and orientation to make it look physically correct and naturally placed within the room's 3D space.\n"
-        "2.  Create realistic lighting, highlights, and shadows for each object that perfectly match the room's light sources.\n"
-        "3.  Seamlessly blend all objects into the scene.\n\n"
-        "**CRITICAL RULE:** Do NOT move the objects from their floor positions. The composition is fixed. Your entire job is the 3D re-rendering and lighting to achieve realism."
+        "1.  **Adjust Perspective & Orientation:** Subtly modify each object's 3D angle and perspective so it sits naturally in the room's 3D space.\n"
+        "2.  **Integrate Lighting & Shadows:** Re-light each object to perfectly match the room's light sources. Add physically accurate shadows and reflections.\n"
+        "3.  **Blend Edges:** Seamlessly blend the objects into the scene.\n\n"
+        "**CRITICAL RULES (FAILURE IF NOT FOLLOWED):**\n"
+        "1.  **PRESERVE FURNITURE IDENTITY:** You MUST use the *exact* furniture provided. **DO NOT change its color, style, fabric, or design.** If a blue armchair is provided, the final image must have that *exact same blue armchair*, not a different one.\n"
+        "2.  **DO NOT MOVE** the furniture. The floor position and layering are final.\n"
+        "3.  **DO NOT ADD OR REMOVE** any objects."
     )
 
     final_prompt = (
