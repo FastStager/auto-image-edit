@@ -219,7 +219,7 @@ def run_ai_edit_endpoint():
 if __name__ == '__main__':
     port = 7860
     try:
-        if KAGGLE_ENV:
+        if KAGGGLE_ENV:
             user_secrets = UserSecretsClient()
             NGROK_TOKEN = user_secrets.get_secret("NGROK_AUTHTOKEN")
         else:
