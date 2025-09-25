@@ -4,7 +4,7 @@ import math
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from pyngrok import ngrok
 import json
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 import numpy as np
 import cv2
 
@@ -12,9 +12,9 @@ from gemini_edit import run_enhanced_ai_edit
 from drawing import draw_circles_on_image
 try:
     from kaggle_secrets import UserSecretsClient
-    KAGGGLE_ENV = True
+    KAGGLE_ENV = True
 except ImportError:
-    KAGGGLE_ENV = False
+    KAGGLE_ENV = False
     print("Kagle secrets not found. Assuming local environment.")
 
 import config
@@ -60,8 +60,6 @@ def detect_objects():
         return jsonify({'error': 'Failed to save files'}), 500
 
     empty_img_pil = Image.open(empty_path)
-    # The staged image is ALWAYS resized to match the empty image dimensions.
-    # This ensures all coordinate systems are consistent from the very beginning.
     staged_img_pil = Image.open(staged_path).convert("RGB").resize(empty_img_pil.size)
     staged_np = np.array(staged_img_pil)
 
@@ -131,12 +129,9 @@ def run_ai_edit_endpoint():
         return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
         
     furniture_only_composite_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
-    # New: A pure black control mask for unambiguous instructions
-    control_mask_img = Image.new('RGB', empty_room_img.size, (0, 0, 0))
-    draw_mask = ImageDraw.Draw(control_mask_img)
+    # "Ghost Image" / Placement Map: A copy of the empty room with colored silhouettes
+    placement_map_img = empty_room_img.copy()
 
-    # Robust Scaling: Calculate scale factor based on the actual empty room image dimensions.
-    # This corrects the potential bug where aspect ratios could cause drift.
     canvas_width = 800 
     scale_factor = empty_room_img.width / canvas_width
 
@@ -157,7 +152,6 @@ def run_ai_edit_endpoint():
         except FileNotFoundError:
             continue
             
-        # Translate canvas coordinates back to original image coordinates using robust scale factor
         unscaled_left = int(obj_data['left'] * scale_factor)
         unscaled_top = int(obj_data['top'] * scale_factor)
         unscaled_width = int(obj_data['width'] * scale_factor)
@@ -170,38 +164,28 @@ def run_ai_edit_endpoint():
         if obj_data.get('flipX'):
             piece = piece.transpose(Image.FLIP_LEFT_RIGHT)
         
-        # NOTE: Fabric.js `angle` is in degrees, clockwise.
         angle_deg = obj_data.get('angle', 0)
-        # We rotate the *furniture cutout itself* before pasting.
-        # This gives the model the final intended orientation directly.
         piece = piece.rotate(-angle_deg, expand=True, resample=Image.BICUBIC)
 
-        # The final position needs to account for the new size of the rotated piece
         paste_x = int(unscaled_left + (unscaled_width - piece.width) / 2)
         paste_y = int(unscaled_top + (unscaled_height - piece.height) / 2)
         
-        # Paste the final, transformed furniture piece onto its own layer
+        # Paste the final, transformed furniture piece onto its own transparent layer
         furniture_only_composite_img.paste(piece, (paste_x, paste_y), piece)
 
-        # Draw the control signals on the separate black mask image
+        # Create the solid color "ghost" silhouette
         color = tuple(original_annot['color'])
-        # The rectangle represents the final position and area
-        mask_rect = (paste_x, paste_y, paste_x + piece.width, paste_y + piece.height)
-        draw_mask.rectangle(mask_rect, fill=color)
-        
-        # The line represents the user-chosen "front" direction
-        center_x = paste_x + piece.width / 2
-        center_y = paste_y + piece.height / 2
-        line_length = max(piece.width, piece.height) * 0.5
-        angle_rad = math.radians(angle_deg) # Use user's angle directly
-        end_x = center_x + line_length * math.cos(angle_rad)
-        end_y = center_y + line_length * math.sin(angle_rad)
-        draw_mask.line([(center_x, center_y), (end_x, end_y)], fill="white", width=5)
+        # Create a solid color image and use the piece's alpha channel as a mask
+        solid_color_fill = Image.new("RGBA", piece.size, color)
+        # We need the alpha channel of the piece as a mask
+        alpha_mask = piece.getchannel('A')
+        # Paste the solid color onto the placement map, using the alpha mask
+        placement_map_img.paste(solid_color_fill, (paste_x, paste_y), alpha_mask)
 
     result_image, status_message = run_enhanced_ai_edit(
         empty_room_img,              
         furniture_only_composite_img,
-        control_mask_img,            
+        placement_map_img,            
         user_prompt
     )
 
@@ -219,7 +203,7 @@ def run_ai_edit_endpoint():
 if __name__ == '__main__':
     port = 7860
     try:
-        if KAGGGLE_ENV:
+        if KAGGLE_ENV:
             user_secrets = UserSecretsClient()
             NGROK_TOKEN = user_secrets.get_secret("NGROK_AUTHTOKEN")
         else:
