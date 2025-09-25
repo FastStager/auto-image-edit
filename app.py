@@ -128,15 +128,21 @@ def run_ai_edit_endpoint():
         return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
         
     user_arranged_furniture_img = Image.new('RGBA', empty_room_img.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(user_arranged_furniture_img)
     canvas_width = 800 
     scale_factor = canvas_width / empty_room_img.width
+    
+    original_annots_by_id = {
+        annot['id']: annot for annot in config.detection_results.get("staged_annotations", [])
+    }
 
     for obj_data in final_objects:
         obj_id = obj_data.get('id')
         if obj_id is None: continue
         
+        original_annot = original_annots_by_id.get(obj_id)
         cutout_path = original_cutouts_by_id.get(obj_id)
-        if not cutout_path: continue
+        if not cutout_path or not original_annot: continue
         
         try:
             furniture_piece_img = Image.open(cutout_path).convert("RGBA")
@@ -166,33 +172,22 @@ def run_ai_edit_endpoint():
         paste_x = int(center_x - piece.width / 2)
         paste_y = int(center_y - piece.height / 2)
         
+        # Draw colored disk on the floor first
+        disk_radius = 30
+        disk_center_x = paste_x + piece.width // 2
+        disk_center_y = paste_y + piece.height - (disk_radius // 2) # Place it near the bottom
+        color = tuple(original_annot['color'])
+        draw.ellipse(
+            [disk_center_x - disk_radius, disk_center_y - disk_radius, disk_center_x + disk_radius, disk_center_y + disk_radius],
+            fill=color
+        )
+        
+        # Paste furniture on top of the disk
         user_arranged_furniture_img.paste(piece, (paste_x, paste_y), piece)
 
-    circle_annotations = []
-    original_annots_by_id = {
-        str(annot['id']): annot for annot in config.detection_results.get("staged_annotations", [])
-    }
-
-    for obj_data in final_objects:
-        obj_id = str(obj_data.get('id'))
-        original_annot = original_annots_by_id.get(obj_id)
-        if not original_annot:
-            continue
-        
-        x = int(obj_data['left'] / scale_factor)
-        y = int(obj_data['top'] / scale_factor)
-        w = int(obj_data['width'] / scale_factor)
-        h = int(obj_data['height'] / scale_factor)
-
-        circle_annotations.append({
-            'bbox': (x, y, w, h),
-            'color': original_annot['color']
-        })
-    
-    empty_room_with_circles = draw_circles_on_image(empty_room_img, circle_annotations)
     
     result_image, status_message = run_enhanced_ai_edit(
-        empty_room_with_circles,
+        empty_room_img,
         user_arranged_furniture_img,
         user_prompt
     )
