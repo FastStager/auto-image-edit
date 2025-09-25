@@ -16,19 +16,23 @@ def run_enhanced_ai_edit(empty_room_with_circles: Image.Image, furniture_image: 
         return None, "❌ GOOGLE_AI_STUDIO_API_KEY not found."
 
     base_prompt = (
-        "Your task is to place furniture from the second image (the 'furniture image') into the first image (the 'empty room') with extreme precision. "
-        "Follow these steps strictly:\n"
-        "1. For each piece of furniture provided, locate its corresponding colored circle in the empty room.\n"
-        "2. Place the furniture so that its center is **exactly** on the center of its corresponding colored circle. The position of the colored circle is an absolute instruction and must not be altered or ignored.\n"
-        "3. Adjust the scale and perspective of the furniture piece to look realistic *in that specific location*, matching the room's perspective, but do not change its position.\n"
-        "4. After positioning all furniture, completely remove all colored circles from the final image. There should be no trace of them.\n"
-        "5. Re-render the furniture with perfectly integrated lighting, shadows, and reflections to create a seamless, photorealistic final image."
+        "You are a precise photo-editing tool. Your ONLY job is to composite images according to strict instructions. You are not an interior designer. "
+        "Your task has two parts:\n\n"
+        "1.  **PLACEMENT (Strict):** For each piece of furniture in the second image (the 'furniture image'), you must place it into the first image (the 'empty room'). The placement for each piece is explicitly defined by a colored circle. The center of the furniture MUST be placed EXACTLY on the center of its corresponding colored circle. This is the ABSOLUTE FINAL location. Do not change it for any reason.\n\n"
+        "2.  **RENDERING (Realistic):** After placing the furniture in its exact required spot, you will then adjust its scale, perspective, lighting, and shadows to make it look perfectly photorealistic in that location. Finally, you will completely remove all colored circles from the image, leaving no trace."
+    )
+
+    prohibitions = (
+        "**CRITICAL PROHIBITIONS:**\n"
+        "- **DO NOT ADD NEW OBJECTS:** You are forbidden from adding any furniture, decorations, or objects that are not explicitly provided in the furniture image.\n"
+        "- **DO NOT MOVE OR REARRANGE:** You are forbidden from moving the furniture from its designated circle location. Do not 'improve' the layout. Your only job is to place and render.\n"
+        "- **DO NOT CORRECT THE USER:** If the user's chosen placement blocks a doorway, window, or seems illogical, you MUST render it there anyway. Follow the placement instruction above all else."
     )
 
     final_prompt = (
-        f"{base_prompt}\n\nApply this final user instruction: "
-        f"\"{user_prompt}. Ensure the final result is hyper-realistic and perfectly blended.\""
-        if user_prompt else base_prompt
+        f"{base_prompt}\n\n{prohibitions}\n\n"
+        f"After following all the above rules, apply this final styling instruction: \"{user_prompt}\""
+        if user_prompt else f"{base_prompt}\n\n{prohibitions}"
     )
     
     try:
