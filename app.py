@@ -128,13 +128,12 @@ def run_ai_edit_endpoint():
     if not original_cutouts_by_id:
         return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
         
-    # Create the "Crude Collage" by starting with the empty room
-    crude_collage_img = empty_room_img.copy().convert("RGBA")
+    # Start with the empty room for our collage
+    ghostly_collage_img = empty_room_img.copy().convert("RGBA")
 
     canvas_width = 800 
     scale_factor = empty_room_img.width / canvas_width
 
-    # The order of objects in final_objects from fabric.js respects the layering (last is on top)
     for obj_data in final_objects:
         obj_id = obj_data.get('id')
         if obj_id is None: continue
@@ -162,19 +161,24 @@ def run_ai_edit_endpoint():
         angle_deg = obj_data.get('angle', 0)
         piece = piece.rotate(-angle_deg, expand=True, resample=Image.BICUBIC)
 
-        # Calculate final paste position, accounting for rotation changing the image size
+        # Make the piece semi-transparent (a "ghost")
+        alpha = piece.getchannel('A')
+        # Set opacity to ~75%
+        new_alpha_data = (np.array(alpha) * 0.75).astype(np.uint8)
+        new_alpha_channel = Image.fromarray(new_alpha_data, 'L')
+        piece.putalpha(new_alpha_channel)
+
         paste_x = int(unscaled_left + (unscaled_width - piece.width) / 2)
         paste_y = int(unscaled_top + (unscaled_height - piece.height) / 2)
         
-        # Paste the transformed furniture piece directly onto the collage
-        # Using the piece's own alpha channel ensures transparency is handled correctly
-        crude_collage_img.paste(piece, (paste_x, paste_y), piece)
+        # Composite the semi-transparent piece onto the main image
+        # This correctly handles layering and transparency
+        ghostly_collage_img.alpha_composite(piece, (paste_x, paste_y))
 
-    # Convert back to RGB for the model
-    crude_collage_img = crude_collage_img.convert("RGB")
+    ghostly_collage_img = ghostly_collage_img.convert("RGB")
 
     result_image, status_message = run_enhanced_ai_edit(
-        crude_collage_img,            
+        ghostly_collage_img,            
         user_prompt
     )
 

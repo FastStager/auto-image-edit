@@ -1,5 +1,5 @@
-import os
-from io import BytesIO
+import osfrom io 
+import BytesIO
 from PIL import Image
 from config import GENAI_AVAILABLE
 
@@ -7,7 +7,7 @@ if GENAI_AVAILABLE:
     import google.generativeai as genai
 
 
-def run_enhanced_ai_edit(crude_collage_image: Image.Image, user_prompt: str):
+def run_enhanced_ai_edit(ghostly_collage_image: Image.Image, user_prompt: str):
     if not GENAI_AVAILABLE:
         return None, "❌ Gemini library not found."
 
@@ -16,18 +16,17 @@ def run_enhanced_ai_edit(crude_collage_image: Image.Image, user_prompt: str):
         return None, "❌ GOOGLE_AI_STUDIO_API_KEY not found."
 
     base_prompt = (
-        "You are a photorealistic rendering engine. You will receive a single image that is a crude collage of furniture pasted into a room. The furniture has been placed exactly where the user wants it, but it looks fake.\n\n"
-        "**Your ONLY task is to make this collage look like a real photograph.**\n\n"
-        "**What to do:**\n"
-        "1.  **Integrate Lighting:** Analyze the room's light sources and re-render the pasted furniture with perfectly matching lighting, highlights, and shadows.\n"
-        "2.  **Add Realistic Shadows:** Create soft, physically accurate shadows cast by the furniture onto the floor and other objects.\n"
-        "3.  **Correct Perspective:** Make minor adjustments to the furniture's perspective to ensure it perfectly matches the room's geometry.\n"
-        "4.  **Blend Edges:** Seamlessly blend the edges of the furniture into the background.\n\n"
-        "**CRITICAL RULES (FAILURE IF NOT FOLLOWED):**\n"
-        "- **DO NOT MOVE a single piece of furniture.** The position and layering are final and must be preserved.\n"
-        "- **DO NOT ADD any new objects, furniture, or decorations.**\n"
-        "- **DO NOT REMOVE any of the furniture provided in the collage.**\n"
-        "- The final output must be a single, coherent, photorealistic image."
+        "You are a photorealistic rendering expert. The user provides an image that is a 'ghostly collage' where semi-transparent furniture has been placed into a room. This shows you **what** furniture to use and **where** it must be located.\n\n"
+        "Your task is to **replace the faint, ghostly furniture with fully solid, hyper-realistic versions.**\n\n"
+        "**Execution Steps:**\n"
+        "1.  **Identify:** Locate the semi-transparent 'ghost' objects in the image.\n"
+        "2.  **Re-render:** For each ghost, re-render it from scratch in the exact same position, but make it fully opaque and solid.\n"
+        "3.  **Correct Perspective:** This is critical. You MUST adjust the perspective, rotation, and warping of each piece to make it look truly three-dimensional and perfectly aligned with the room's geometry and vanishing points.\n"
+        "4.  **Integrate:** Add perfect, physically-accurate lighting, highlights, and shadows so the new furniture blends seamlessly into the room's environment.\n\n"
+        "**Strict Rules:**\n"
+        "- Maintain the general position and size of the ghostly placeholders.\n"
+        "- DO NOT add any new furniture not indicated by a ghost.\n"
+- DO NOT remove any furniture indicated by a ghost."
     )
 
     final_prompt = (
@@ -41,7 +40,7 @@ def run_enhanced_ai_edit(crude_collage_image: Image.Image, user_prompt: str):
         model = genai.GenerativeModel("gemini-2.5-flash-image-preview")
 
         response = model.generate_content(
-            [crude_collage_image, final_prompt]
+            [ghostly_collage_image, final_prompt]
         )
 
         if not (response.candidates and response.candidates[0].content and response.candidates[0].content.parts):
