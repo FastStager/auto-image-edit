@@ -154,50 +154,49 @@ def run_ai_edit_endpoint():
         unscaled_height = int(obj_data['height'] / scale_factor)
         
         if unscaled_width <= 0 or unscaled_height <= 0: continue
-        
-        # We handle rotation ourselves now before pasting
+
         piece = furniture_piece_img.resize((unscaled_width, unscaled_height), Image.Resampling.LANCZOS)
 
         if obj_data.get('flipX'):
             piece = piece.transpose(Image.FLIP_LEFT_RIGHT)
         
-        # Position calculation based on unrotated dimensions
+        angle = obj_data.get('angle', 0)
+        if angle != 0:
+            piece = piece.rotate(-angle, expand=True, resample=Image.BICUBIC)
+
         unscaled_left = int(obj_data['left'] / scale_factor)
         unscaled_top = int(obj_data['top'] / scale_factor)
+        
         center_x = unscaled_left + unscaled_width / 2
         center_y = unscaled_top + unscaled_height / 2
         
-        paste_x = int(center_x - unscaled_width / 2)
-        paste_y = int(center_y - unscaled_height / 2)
+        paste_x = int(center_x - piece.width / 2)
+        paste_y = int(center_y - piece.height / 2)
         
-        # Draw colored disk with orientation pointer
-        disk_radius = 35
-        disk_center_x = paste_x + unscaled_width // 2
-        disk_center_y = paste_y + unscaled_height - (disk_radius // 2.5) # Place it near the bottom
+        # Draw colored disk on the floor first
+        disk_radius = 30
+        disk_center_x = paste_x + piece.width // 2
+        disk_center_y = paste_y + piece.height - (disk_radius // 2)
         color = tuple(original_annot['color'])
-        
         draw.ellipse(
             [disk_center_x - disk_radius, disk_center_y - disk_radius, disk_center_x + disk_radius, disk_center_y + disk_radius],
-            fill=color, outline="black", width=2
+            fill=color
+        )
+
+        # Add the orientation pointer based on the user's rotation
+        # An angle of 0 on the canvas is considered "facing down" (90 degrees in math coordinates)
+        # Clockwise rotation on canvas is added to this base angle.
+        pointer_angle_rad = math.radians(90 + angle)
+        pointer_end_x = disk_center_x + disk_radius * math.cos(pointer_angle_rad)
+        pointer_end_y = disk_center_y + disk_radius * math.sin(pointer_angle_rad)
+        draw.line(
+            [(disk_center_x, disk_center_y), (pointer_end_x, pointer_end_y)],
+            fill=(255, 255, 255),  # A bright white pointer
+            width=5
         )
         
-        # Add a pointer line for rotation
-        angle_deg = obj_data.get('angle', 0)
-        # angle - 90 to treat 'up' as 0 degrees
-        angle_rad = math.radians(angle_deg - 90) 
-        pointer_end_x = disk_center_x + (disk_radius - 5) * math.cos(angle_rad)
-        pointer_end_y = disk_center_y + (disk_radius - 5) * math.sin(angle_rad)
-        draw.line([disk_center_x, disk_center_y, pointer_end_x, pointer_end_y], fill="white", width=5)
-
-        # Paste the furniture piece (rotated) onto a temporary canvas
-        rotated_piece = piece.rotate(-angle_deg, expand=True, resample=Image.BICUBIC)
-        temp_canvas = Image.new('RGBA', user_arranged_furniture_img.size, (0, 0, 0, 0))
-        
-        final_paste_x = int(center_x - rotated_piece.width / 2)
-        final_paste_y = int(center_y - rotated_piece.height / 2)
-        
-        temp_canvas.paste(rotated_piece, (final_paste_x, final_paste_y), rotated_piece)
-        user_arranged_furniture_img = Image.alpha_composite(user_arranged_furniture_img, temp_canvas)
+        # Paste furniture on top of the disk
+        user_arranged_furniture_img.paste(piece, (paste_x, paste_y), piece)
 
     
     result_image, status_message = run_enhanced_ai_edit(
