@@ -173,29 +173,31 @@ def run_ai_edit_endpoint():
         paste_x = int(center_x - piece.width / 2)
         paste_y = int(center_y - piece.height / 2)
         
-        # Draw colored disk on the floor first
+        # Draw floor compass (disk + pointer)
         disk_radius = 30
         disk_center_x = paste_x + piece.width // 2
-        disk_center_y = paste_y + piece.height - (disk_radius // 2)
+        disk_center_y = paste_y + piece.height - (disk_radius // 2) 
         color = tuple(original_annot['color'])
+        
         draw.ellipse(
             [disk_center_x - disk_radius, disk_center_y - disk_radius, disk_center_x + disk_radius, disk_center_y + disk_radius],
             fill=color
         )
-
-        # Add the orientation pointer based on the user's rotation
-        # An angle of 0 on the canvas is considered "facing down" (90 degrees in math coordinates)
-        # Clockwise rotation on canvas is added to this base angle.
-        pointer_angle_rad = math.radians(90 + angle)
-        pointer_end_x = disk_center_x + disk_radius * math.cos(pointer_angle_rad)
-        pointer_end_y = disk_center_y + disk_radius * math.sin(pointer_angle_rad)
+        
+        # Draw rotational pointer line
+        pointer_length = disk_radius * 1.5
+        # Fabric.js angle is in degrees, clockwise. Convert to radians for math functions.
+        # We subtract 90 degrees because 0 degrees on canvas is 'East', but we want it to point 'North' visually from the center of the base.
+        angle_rad = math.radians(angle - 90) 
+        pointer_end_x = disk_center_x + pointer_length * math.cos(angle_rad)
+        pointer_end_y = disk_center_y + pointer_length * math.sin(angle_rad)
         draw.line(
             [(disk_center_x, disk_center_y), (pointer_end_x, pointer_end_y)],
-            fill=(255, 255, 255),  # A bright white pointer
+            fill="white", 
             width=5
         )
         
-        # Paste furniture on top of the disk
+        # Paste furniture on top of the compass
         user_arranged_furniture_img.paste(piece, (paste_x, paste_y), piece)
 
     

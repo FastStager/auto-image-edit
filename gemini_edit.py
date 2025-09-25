@@ -17,21 +17,22 @@ def run_enhanced_ai_edit(empty_room_image: Image.Image, furniture_reference_imag
 
     base_prompt = (
         "You are a photorealistic image editor. You will receive an 'empty room' image and a 'furniture reference' image.\n"
-        "The 'furniture reference' image contains furniture, each with a colored disk on the floor beneath it. This disk is your **primary instruction**.\n\n"
+        "The 'furniture reference' image contains furniture placed on top of a 'floor compass'. Each compass consists of a colored disk and a white pointer line.\n\n"
         "**Your instructions are strict and must be followed precisely:**\n"
-        "1.  **POSITION:** The center of the disk indicates the **exact floor position** for the furniture in the empty room.\n"
-        "2.  **ORIENTATION:** The disk has a white pointer line. This pointer indicates the **'front-facing' direction**. You MUST orient the furniture to match this precise direction.\n"
-        "3.  **RENDER:** After placing and orienting the furniture correctly, blend it photorealistically into the room with correct lighting, scale, and shadows.\n"
-        "4.  **CLEANUP:** You MUST completely remove the colored disk and its pointer from the final image. No trace of the instructional disk should remain.\n\n"
+        "1.  **TRANSFER:** Move each furniture piece from the reference image into the empty room.\n"
+        "2.  **POSITION:** The colored disk shows the **exact floor position**. Place the furniture precisely on this spot.\n"
+        "3.  **ORIENT:** The white pointer line shows the **exact forward-facing orientation**. You MUST rotate the furniture so its 'front' aligns perfectly with the direction of the pointer.\n"
+        "4.  **RENDER:** After placement and orientation, render the furniture with realistic scale, perspective, lighting, and shadows to blend it seamlessly into the room.\n"
+        "5.  **CLEANUP:** You MUST completely remove the entire 'floor compass' (both the colored disk and the white pointer line) from the final image. No trace should remain.\n\n"
         "**CRITICAL RULES:**\n"
-        "- DO NOT add any new objects, furniture, or decorations.\n"
-        "- DO NOT deviate from the specified position or orientation.\n"
-        "- Render ONLY the furniture provided in the reference image."
+        "- DO NOT add any objects not present in the reference image.\n"
+        "- DO NOT alter the position or orientation defined by the floor compass.\n"
+        "- Render ONLY the furniture provided."
     )
 
     final_prompt = (
         f"{base_prompt}\n\n"
-        f"After following all rules, apply this final user styling: \"{user_prompt}\""
+        f"After following all rules, apply this user styling: \"{user_prompt}\""
         if user_prompt else base_prompt
     )
     
