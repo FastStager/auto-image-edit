@@ -63,16 +63,16 @@ def detect_objects():
     staged_img_pil = Image.open(staged_path).convert("RGB").resize(empty_img_pil.size)
     staged_np = np.array(staged_img_pil)
 
-    resized_staged_filename = f"resized_{os.path.basename(staged_path)}"
-    resized_staged_filepath = os.path.join(app.config['UPLOAD_FOLDER'], resized_staged_filename)
-    staged_img_pil.save(resized_staged_filepath)
-    resized_staged_url = f"/{UPLOAD_FOLDER}/{resized_staged_filename}"
-    
-    run_detection_and_populate_editor(
-        empty_path, resized_staged_filepath, prompts,
+    staged_with_annotations_pil, _, _, _ = run_detection_and_populate_editor(
+        empty_path, staged_img_pil, prompts,
         processor=hf_gd_processor, model=hf_gd_model, predictor=sam_predictor
     )
     
+    annotated_filename = f"annotated_{os.path.basename(staged_path)}"
+    annotated_filepath = os.path.join(app.config['UPLOAD_FOLDER'], annotated_filename)
+    staged_with_annotations_pil.save(annotated_filepath)
+    final_staged_url = f"/{UPLOAD_FOLDER}/{annotated_filename}"
+
     remove_background_and_add_border()
     
     annotations = config.detection_results.get("staged_annotations", [])
@@ -106,7 +106,7 @@ def detect_objects():
     config.detection_results['original_cutouts_by_id'] = original_cutouts_by_id
 
     return jsonify({
-        'staged_image_url': resized_staged_url,
+        'staged_image_url': final_staged_url, 
         'empty_image_url': empty_url,
         'objects': cutout_objects 
     })

@@ -232,6 +232,21 @@
             });
         }
 
+        function transferObjects(fromCanvas, toCanvas, backgroundUrl) {
+            toCanvas.clear();
+            fabric.Image.fromURL(backgroundUrl, (img) => {
+                const scale = canvasWidth / img.width;
+                toCanvas.setWidth(canvasWidth).setHeight(img.height * scale);
+                toCanvas.setBackgroundImage(img, toCanvas.renderAll.bind(toCanvas), { scaleX: scale, scaleY: scale });
+
+                fromCanvas.getObjects().forEach(obj => {
+                    obj.clone(function (clonedObj) {
+                        toCanvas.add(clonedObj);
+                    });
+                });
+            });
+        }
+
         function showTab(tabName) {
             document.querySelectorAll('.tab-content, .tab-button').forEach(el => el.classList.remove('active'));
             document.getElementById(`${tabName}-tab`).classList.add('active');
@@ -278,13 +293,7 @@
             if (!emptyRoomImageUrl) { updateStatus("Cannot transfer, empty room URL is missing.", true); return; }
             updateStatus("Transferring objects...");
 
-            const objectsToTransfer = stagedCanvas.getObjects().map(obj => ({
-                url: obj.getSrc(),
-                bbox: [obj.left, obj.top, obj.width * obj.scaleX, obj.height * obj.scaleY],
-                id: parseInt(obj.id.split('-')[1], 10)
-            }));
-
-            drawCutouts(emptyCanvas, emptyRoomImageUrl, objectsToTransfer.map(o => ({ ...o, bbox: [o.bbox[0], o.bbox[1], o.bbox[2], o.bbox[3]] })));
+            transferObjects(stagedCanvas, emptyCanvas, emptyRoomImageUrl);
 
             updateStatus("✅ Transfer complete.");
             const generateBtn = document.getElementById('generate-btn');

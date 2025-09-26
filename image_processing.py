@@ -26,9 +26,8 @@ def segment_sam(image_rgb_numpy: np.ndarray, sam_predictor: SamPredictor, boxes_
     )
     return masks.cpu()
 
-def run_detection_and_populate_editor(empty_img_path, staged_img_path, prompts_str, processor, model, predictor):
+def run_detection_and_populate_editor(empty_img_path, staged_img_pil: Image.Image, prompts_str, processor, model, predictor):
     empty_img_pil = Image.open(empty_img_path).convert("RGB")
-    staged_img_pil = Image.open(staged_img_path).convert("RGB").resize(empty_img_pil.size)
     detection_results.update({"empty_image": empty_img_pil, "staged_image": staged_img_pil, "selected_staged": None})
     
     staged_img_np = np.array(staged_img_pil)
