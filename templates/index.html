@@ -242,7 +242,7 @@
                 fromCanvas.getObjects().forEach(obj => {
                     obj.clone(function (clonedObj) {
                         toCanvas.add(clonedObj);
-                    });
+                    }, ['id']);
                 });
             });
         }
