@@ -1,14 +1,17 @@
 import os
 import uuid
-import math
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from pyngrok import ngrok
 import json
 from PIL import Image, ImageDraw, ImageOps
 import numpy as np
 import cv2
+import base64
+from io import BytesIO
 
 from gemini_edit import run_enhanced_ai_edit
+from qwen_edit import run_qwen_edit
+
 from drawing import draw_circles_on_image
 try:
     from kaggle_secrets import UserSecretsClient
@@ -23,20 +26,24 @@ from image_processing import run_detection_and_populate_editor, remove_backgroun
 
 UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+TMP_FOLDER = 'tmp'
+os.makedirs(TMP_FOLDER, exist_ok=True)
+
 app = Flask(__name__, template_folder='templates')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['TMP_FOLDER'] = TMP_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 print("Loading AI models, this might take a moment...")
 hf_gd_processor, hf_gd_model, sam_predictor = load_models()
 print("Models loaded successfully.")
 
-def save_uploaded_file(file_storage):
+def save_uploaded_file(file_storage, folder=UPLOAD_FOLDER):
     if not file_storage: return None, None
     filename = f"{uuid.uuid4()}_{os.path.basename(file_storage.filename)}"
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    filepath = os.path.join(folder, filename)
     file_storage.save(filepath)
-    return filepath, f"/{UPLOAD_FOLDER}/{filename}"
+    return filepath, f"/{folder}/{filename}"
 
 @app.route('/')
 def index():
@@ -46,6 +53,11 @@ def index():
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/tmp/<filename>')
+def temp_file(filename):
+    return send_from_directory(app.config['TMP_FOLDER'], filename)
+
 
 @app.route('/detect', methods=['POST'])
 def detect_objects():
@@ -111,6 +123,57 @@ def detect_objects():
         'objects': cutout_objects 
     })
 
+@app.route('/upload_direct_furniture', methods=['POST'])
+def upload_direct_furniture():
+    if 'furniture_image' not in request.files:
+        return jsonify({'error': 'No furniture image provided'}), 400
+    
+    file_storage = request.files['furniture_image']
+    
+    # Save the uploaded furniture image to the main uploads folder
+    filepath, file_url = save_uploaded_file(file_storage, UPLOAD_FOLDER)
+    
+    if not filepath:
+        return jsonify({'error': 'Failed to save uploaded furniture image'}), 500
+        
+    # Return the URL so the frontend can add it to the canvas
+    return jsonify({
+        'success': True,
+        'furniture_url': file_url,
+        'id': f"direct-{uuid.uuid4()}" # Give it a unique ID
+    })
+
+
+@app.route('/qwen_edit', methods=['POST'])
+def qwen_edit_endpoint():
+    data = request.json
+    if not data or 'image_b64' not in data or 'prompt' not in data:
+        return jsonify({'error': 'Missing image or prompt data.'}), 400
+
+    image_b64 = data['image_b64'].split(',')[1]
+    prompt = data['prompt']
+    
+    try:
+        result_image_b64 = run_qwen_edit(image_b64, prompt)
+        
+        if result_image_b64 is None:
+            return jsonify({'error': 'AI processing failed to return an image.'}), 500
+            
+        image_data = base64.b64decode(result_image_b64)
+        img = Image.open(BytesIO(image_data))
+        
+        preview_filename = f"preview_{uuid.uuid4()}.png"
+        preview_filepath = os.path.join(app.config['TMP_FOLDER'], preview_filename)
+        img.save(preview_filepath)
+        
+        preview_url = f"/tmp/{preview_filename}"
+
+        return jsonify({'preview_url': preview_url})
+
+    except Exception as e:
+        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+
+
 @app.route('/run_ai', methods=['POST'])
 def run_ai_edit_endpoint():
     data = request.json
@@ -125,22 +188,24 @@ def run_ai_edit_endpoint():
         return jsonify({'error': 'Base images not found. Please run detection first.'}), 400
 
     original_cutouts_by_id = config.detection_results.get("original_cutouts_by_id", {})
-    if not original_cutouts_by_id:
-        return jsonify({'error': 'Cutout object data not found. Please run detection first.'}), 400
-        
-    # Create the "Crude Collage" by starting with the empty room
+    
     crude_collage_img = empty_room_img.copy().convert("RGBA")
-
     canvas_width = 800 
     scale_factor = empty_room_img.width / canvas_width
 
-    # The order of objects in final_objects from fabric.js respects the layering (last is on top)
     for obj_data in final_objects:
         obj_id = obj_data.get('id')
         if obj_id is None: continue
         
-        cutout_path = original_cutouts_by_id.get(obj_id)
-        if not cutout_path: continue
+        if str(obj_id).startswith('direct-'):
+            url_path = obj_data.get('src').lstrip('/')
+            cutout_path = os.path.join(os.path.dirname(__file__), url_path)
+        else:
+            cutout_path = original_cutouts_by_id.get(obj_id)
+
+        if not cutout_path or not os.path.exists(cutout_path):
+            print(f"Warning: Could not find image for object ID {obj_id} at path {cutout_path}")
+            continue
         
         try:
             furniture_piece_img = Image.open(cutout_path).convert("RGBA")
@@ -162,15 +227,11 @@ def run_ai_edit_endpoint():
         angle_deg = obj_data.get('angle', 0)
         piece = piece.rotate(-angle_deg, expand=True, resample=Image.BICUBIC)
 
-        # Calculate final paste position, accounting for rotation changing the image size
         paste_x = int(unscaled_left + (unscaled_width - piece.width) / 2)
         paste_y = int(unscaled_top + (unscaled_height - piece.height) / 2)
         
-        # Paste the transformed furniture piece directly onto the collage
-        # Using the piece's own alpha channel ensures transparency is handled correctly
         crude_collage_img.paste(piece, (paste_x, paste_y), piece)
 
-    # Convert back to RGB for the model
     crude_collage_img = crude_collage_img.convert("RGB")
 
     result_image, status_message = run_enhanced_ai_edit(

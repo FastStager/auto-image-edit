@@ -1,4 +1,3 @@
-
 torch
 torchvision
 transformers
@@ -9,3 +8,4 @@ Pillow
 google-generativeai
 flask
 pyngrok
+requests

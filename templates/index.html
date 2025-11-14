@@ -15,18 +15,20 @@
         }
 
         .container {
-            max-width: 1600px;
+            max-width: 1700px;
             margin: auto;
             display: grid;
-            grid-template-columns: 350px 1fr;
+            grid-template-columns: 350px 1fr 350px;
             gap: 20px;
         }
 
-        .controls {
+        .controls,
+        .previews {
             background: white;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            align-self: start;
         }
 
         .canvases {
@@ -92,9 +94,26 @@
             background-color: #5a6268;
         }
 
-        .canvas-container {
-            border: 1px solid #ccc;
-            margin-bottom: 15px;
+        .success-btn {
+            background-color: #28a745;
+        }
+
+        .success-btn:hover {
+            background-color: #218838;
+        }
+
+        .danger-btn {
+            background-color: #dc3545;
+        }
+
+        .danger-btn:hover {
+            background-color: #c82333;
+        }
+
+        .grid-2-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
         }
 
         #status {
@@ -132,41 +151,54 @@
         .tab-content.active {
             display: block;
         }
+
+        #preview-image-container {
+            width: 100%;
+            aspect-ratio: 4 / 3;
+            background-color: #eee;
+            margin-top: 10px;
+            border: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #preview-image {
+            max-width: 100%;
+            max-height: 100%;
+        }
     </style>
 </head>
 
 <body>
-
     <div class="container">
         <div class="controls">
             <h1>AI Staging Controls</h1>
 
             <div class="control-group">
-                <h3>1. Upload & Detect</h3>
+                <h3>1. Load Scene</h3>
                 <label for="empty-image">Empty Room Image</label>
                 <input type="file" id="empty-image" accept="image/*">
-                <label for="staged-image">Staged Room Image</label>
+                <label for="staged-image">Staged Room Image (for detection)</label>
                 <input type="file" id="staged-image" accept="image/*">
                 <label for="prompts">Detection Prompts</label>
                 <input type="text" id="prompts" value="sofa, chair, table, lamp">
-                <button id="detect-btn">🔍 Detect Objects</button>
+                <button id="detect-btn">🔍 Detect & Extract Furniture</button>
             </div>
 
             <div class="control-group">
-                <h3>2. Edit & Transfer</h3>
-                <button id="start-over-btn" class="secondary-btn">🔄 Start Over (Clear Detections)</button>
-                <p style="margin-top:10px;">Select an object to enable controls.</p>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 10px;">
-                    <button id="rotate-btn" class="secondary-btn" disabled>Rotate 15°</button>
-                    <button id="flip-x-btn" class="secondary-btn" disabled>Flip ↔</button>
-                </div>
-                <button id="transfer-btn" disabled>📤 Transfer to Empty Room</button>
+                <h3>2. Add Furniture</h3>
+                <label for="direct-furniture-upload">Upload Furniture Directly</label>
+                <input type="file" id="direct-furniture-upload" accept="image/png,image/webp">
+                <p style="font-size: 0.8em; color: #666;">Use PNGs with transparent backgrounds for best results.</p>
+                <button id="transfer-btn" disabled>📤 Transfer Detected to Empty Room</button>
             </div>
+
             <div class="control-group">
-                <h3>3. Generate</h3>
+                <h3>3. Generate Final Image</h3>
                 <label for="user-prompt">Custom AI Instructions:</label>
-                <textarea id="user-prompt" rows="4" style="width:100%; box-sizing: border-box;"
-                    placeholder="Optional: Add lighting or style changes... e.g., 'Make the lighting warmer'"></textarea>
+                <textarea id="user-prompt" rows="3" style="width:100%; box-sizing: border-box;"
+                    placeholder="e.g., 'Make the lighting warmer'"></textarea>
                 {% if genai_available %}
                 <button id="generate-btn" disabled>🚀 Generate Photorealistic Image</button>
                 {% else %}
@@ -174,22 +206,57 @@
                     Disabled</button>
                 {% endif %}
             </div>
-
+            <button id="start-over-btn" class="secondary-btn">🔄 Start Over</button>
             <div id="status">Ready</div>
         </div>
 
         <div class="canvases">
             <div class="tab-buttons">
-                <button class="tab-button active" onclick="showTab('staged')">📸 Staged Room</button>
-                <button class="tab-button" onclick="showTab('empty')">🏠 Empty Room</button>
+                <button class="tab-button active" onclick="showTab('empty')">🏠 Empty Room Editor</button>
+                <button class="tab-button" onclick="showTab('staged')">📸 Staged (Source)</button>
                 <button class="tab-button" onclick="showTab('result')">✨ AI Result</button>
             </div>
 
-            <div id="staged-tab" class="tab-content active"><canvas id="staged-canvas"></canvas></div>
-            <div id="empty-tab" class="tab-content"><canvas id="empty-canvas"></canvas></div>
+            <div id="empty-tab" class="tab-content active"><canvas id="empty-canvas"></canvas></div>
+            <div id="staged-tab" class="tab-content"><canvas id="staged-canvas"></canvas></div>
             <div id="result-tab" class="tab-content">
                 <h2>Generated Image</h2>
                 <img id="result-image" src="" style="max-width: 100%; border: 1px solid #ccc;">
+            </div>
+        </div>
+
+        <div class="previews">
+            <h3>Object Controls</h3>
+            <div class="control-group">
+                <label>Transform (Select an object first)</label>
+                <div class="grid-2-col">
+                    <button id="rotate-btn" class="secondary-btn" disabled>Rotate 15°</button>
+                    <button id="flip-x-btn" class="secondary-btn" disabled>Flip ↔</button>
+                </div>
+            </div>
+            <div class="control-group">
+                <label>Multi-Angle View (AI Preview)</label>
+                <div class="grid-2-col">
+                    <button class="cam-btn secondary-btn" data-prompt="Rotate camera 45° left" disabled>↶ 45°</button>
+                    <button class="cam-btn secondary-btn" data-prompt="Rotate camera 45° right" disabled>↷ 45°</button>
+                    <button class="cam-btn secondary-btn" data-prompt="Rotate camera 90° left" disabled>↶ 90°</button>
+                    <button class="cam-btn secondary-btn" data-prompt="Rotate camera 90° right" disabled>↷ 90°</button>
+                    <button class="cam-btn secondary-btn" data-prompt="Switch to close-up lens" disabled>Zoom
+                        In</button>
+                    <button class="cam-btn secondary-btn" data-prompt="Switch to zoom out lens" disabled>Zoom
+                        Out</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>Preview</h3>
+                <div id="preview-image-container">
+                    <img id="preview-image" src="">
+                </div>
+                <div class="grid-2-col" style="margin-top: 10px;">
+                    <button id="accept-preview-btn" class="success-btn" disabled>✅ Accept</button>
+                    <button id="discard-preview-btn" class="danger-btn" disabled>❌ Discard</button>
+                </div>
             </div>
         </div>
     </div>
@@ -197,54 +264,72 @@
     <script>
         let stagedCanvas, emptyCanvas;
         let emptyRoomImageUrl = null;
+        let currentPreviewUrl = null;
         const canvasWidth = 800;
 
         function initCanvases() {
             stagedCanvas = new fabric.Canvas('staged-canvas', { backgroundColor: '#eee' });
             emptyCanvas = new fabric.Canvas('empty-canvas', { backgroundColor: '#eee' });
 
-            [stagedCanvas, emptyCanvas].forEach(canvas => {
-                const buttons = ['rotate-btn', 'flip-x-btn'];
-                canvas.on('selection:created', () => buttons.forEach(id => document.getElementById(id).disabled = false));
-                canvas.on('selection:cleared', () => buttons.forEach(id => document.getElementById(id).disabled = true));
-            });
+            emptyCanvas.on('selection:created', updateObjectControls);
+            emptyCanvas.on('selection:updated', updateObjectControls);
+            emptyCanvas.on('selection:cleared', updateObjectControls);
         }
 
-        function drawCutouts(canvas, backgroundUrl, objects) {
-            canvas.clear();
-            fabric.Image.fromURL(backgroundUrl, (img) => {
+        function updateObjectControls() {
+            const activeObject = emptyCanvas.getActiveObject();
+            const enabled = activeObject !== null;
+            document.querySelectorAll('.cam-btn, #rotate-btn, #flip-x-btn').forEach(btn => btn.disabled = !enabled);
+        }
+
+        function setCanvasBackground(canvas, url, onReady) {
+            if (!url) {
+                canvas.clear();
+                canvas.setBackgroundImage(null, canvas.renderAll.bind(canvas));
+                if (onReady) onReady();
+                return;
+            }
+            fabric.Image.fromURL(url, (img) => {
                 const scale = canvasWidth / img.width;
                 canvas.setWidth(canvasWidth).setHeight(img.height * scale);
                 canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas), { scaleX: scale, scaleY: scale });
+                if (onReady) onReady();
+            }, { crossOrigin: 'anonymous' });
+        }
 
+        function drawCutoutsOnStaged(backgroundUrl, objects) {
+            stagedCanvas.clear();
+            setCanvasBackground(stagedCanvas, backgroundUrl, () => {
                 objects.forEach(obj => {
                     fabric.Image.fromURL(obj.url, (furnitureImg) => {
+                        const scale = canvasWidth / stagedCanvas.backgroundImage.width;
                         furnitureImg.set({
                             left: obj.bbox[0] * scale,
                             top: obj.bbox[1] * scale,
                             scaleX: (obj.bbox[2] * scale) / furnitureImg.width,
                             scaleY: (obj.bbox[3] * scale) / furnitureImg.height,
-                            id: `furniture-${obj.id}`
+                            id: obj.id,
+                            selectable: false // Make them unselectable on the source canvas
                         });
-                        canvas.add(furnitureImg);
+                        stagedCanvas.add(furnitureImg);
                     }, { crossOrigin: 'anonymous' });
                 });
             });
         }
 
-        function transferObjects(fromCanvas, toCanvas, backgroundUrl) {
-            toCanvas.clear();
-            fabric.Image.fromURL(backgroundUrl, (img) => {
-                const scale = canvasWidth / img.width;
-                toCanvas.setWidth(canvasWidth).setHeight(img.height * scale);
-                toCanvas.setBackgroundImage(img, toCanvas.renderAll.bind(toCanvas), { scaleX: scale, scaleY: scale });
+        function transferObjects() {
+            if (!emptyRoomImageUrl) { updateStatus("Cannot transfer, empty room URL is missing.", true); return; }
+            updateStatus("Transferring objects...");
 
-                fromCanvas.getObjects().forEach(obj => {
-                    obj.clone(function (clonedObj) {
-                        toCanvas.add(clonedObj);
-                    }, ['id']);
-                });
+            stagedCanvas.getObjects().forEach(obj => {
+                obj.clone(function (clonedObj) {
+                    clonedObj.set({ selectable: true });
+                    emptyCanvas.add(clonedObj);
+                }, ['id']);
             });
+            emptyCanvas.renderAll();
+            updateStatus("✅ Transfer complete.");
+            if (document.getElementById('generate-btn')) document.getElementById('generate-btn').disabled = false;
         }
 
         function showTab(tabName) {
@@ -258,14 +343,19 @@
             document.getElementById('status').style.color = isError ? 'red' : 'black';
         }
 
-        function getActiveCanvas() {
-            return document.querySelector('.tab-button.active').getAttribute('onclick').includes('staged') ? stagedCanvas : emptyCanvas;
-        }
+        document.getElementById('empty-image').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                emptyRoomImageUrl = URL.createObjectURL(file);
+                setCanvasBackground(emptyCanvas, emptyRoomImageUrl);
+                showTab('empty');
+            }
+        });
 
         document.getElementById('detect-btn').addEventListener('click', async () => {
             const emptyImageFile = document.getElementById('empty-image').files[0];
             const stagedImageFile = document.getElementById('staged-image').files[0];
-            if (!emptyImageFile || !stagedImageFile) { updateStatus("Please upload both images.", true); return; }
+            if (!emptyImageFile || !stagedImageFile) { updateStatus("Please upload both Empty Room and Staged Room images.", true); return; }
             updateStatus("Detecting objects...");
 
             const formData = new FormData();
@@ -278,47 +368,146 @@
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
-                emptyRoomImageUrl = data.empty_image_url;
-
-                drawCutouts(stagedCanvas, data.staged_image_url, data.objects);
-
+                drawCutoutsOnStaged(data.staged_image_url, data.objects);
                 updateStatus(`✅ Detection complete! Found ${data.objects.length} objects.`);
                 document.getElementById('transfer-btn').disabled = false;
+                showTab('staged');
             } catch (error) {
                 updateStatus(`Error: ${error.message}`, true);
             }
         });
 
-        document.getElementById('transfer-btn').addEventListener('click', () => {
-            if (!emptyRoomImageUrl) { updateStatus("Cannot transfer, empty room URL is missing.", true); return; }
-            updateStatus("Transferring objects...");
+        document.getElementById('direct-furniture-upload').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            if (!emptyRoomImageUrl) {
+                updateStatus("Please upload an Empty Room image first.", true);
+                e.target.value = ''; // Reset file input
+                return;
+            }
+            updateStatus("Uploading furniture...");
 
-            transferObjects(stagedCanvas, emptyCanvas, emptyRoomImageUrl);
+            const formData = new FormData();
+            formData.append('furniture_image', file);
 
-            updateStatus("✅ Transfer complete.");
-            const generateBtn = document.getElementById('generate-btn');
-            if (generateBtn) generateBtn.disabled = false;
-            showTab('empty');
+            try {
+                const response = await fetch('/upload_direct_furniture', { method: 'POST', body: formData });
+                const data = await response.json();
+                if (!data.success) throw new Error(data.error);
+
+                fabric.Image.fromURL(data.furniture_url, (img) => {
+                    img.set({
+                        left: 50,
+                        top: 100,
+                        id: data.id,
+                        scaleX: 0.3, // Initial scale
+                        scaleY: 0.3
+                    });
+                    emptyCanvas.add(img);
+                    emptyCanvas.setActiveObject(img);
+                    emptyCanvas.renderAll();
+                    showTab('empty');
+                    updateStatus("✅ Furniture added to the editor.");
+                    if (document.getElementById('generate-btn')) document.getElementById('generate-btn').disabled = false;
+                }, { crossOrigin: 'anonymous' });
+
+            } catch (error) {
+                updateStatus(`Error uploading furniture: ${error.message}`, true);
+            } finally {
+                e.target.value = ''; // Reset file input
+            }
         });
 
+        document.getElementById('transfer-btn').addEventListener('click', transferObjects);
+
         document.getElementById('start-over-btn').addEventListener('click', () => {
-            stagedCanvas.clear().setBackgroundColor('#eee');
-            emptyCanvas.clear().setBackgroundColor('#eee');
+            stagedCanvas.clear().setBackgroundColor('#eee').renderAll();
+            emptyCanvas.clear().setBackgroundColor('#eee').renderAll();
+            document.getElementById('result-image').src = "";
             emptyRoomImageUrl = null;
             document.getElementById('transfer-btn').disabled = true;
-            const generateBtn = document.getElementById('generate-btn');
-            if (generateBtn) generateBtn.disabled = true;
-            updateStatus("Cleared. Ready for new detection.");
+            if (document.getElementById('generate-btn')) document.getElementById('generate-btn').disabled = true;
+            document.getElementById('empty-image').value = '';
+            document.getElementById('staged-image').value = '';
+            document.getElementById('direct-furniture-upload').value = '';
+            updateStatus("Cleared. Ready for new project.");
         });
 
         document.getElementById('rotate-btn').addEventListener('click', () => {
-            const obj = getActiveCanvas()?.getActiveObject();
-            if (obj) { obj.rotate(obj.angle + 15); getActiveCanvas().renderAll(); }
+            const obj = emptyCanvas.getActiveObject();
+            if (obj) { obj.rotate(obj.angle + 15); emptyCanvas.renderAll(); }
         });
 
         document.getElementById('flip-x-btn').addEventListener('click', () => {
-            const obj = getActiveCanvas()?.getActiveObject();
-            if (obj) { obj.toggle('flipX'); getActiveCanvas().renderAll(); }
+            const obj = emptyCanvas.getActiveObject();
+            if (obj) { obj.toggle('flipX'); emptyCanvas.renderAll(); }
+        });
+
+        document.querySelectorAll('.cam-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const activeObject = emptyCanvas.getActiveObject();
+                if (!activeObject) { updateStatus("Select an object first.", true); return; }
+
+                const prompt = e.target.dataset.prompt;
+                updateStatus(`Requesting AI preview for: ${prompt}...`);
+
+                // Disable all buttons during processing
+                document.querySelectorAll('.cam-btn, #accept-preview-btn, #discard-preview-btn').forEach(b => b.disabled = true);
+
+                try {
+                    const image_b64 = activeObject.toDataURL({ format: 'png' });
+                    const response = await fetch('/qwen_edit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image_b64: image_b64, prompt: prompt })
+                    });
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error);
+
+                    currentPreviewUrl = data.preview_url;
+                    document.getElementById('preview-image').src = currentPreviewUrl;
+                    document.getElementById('accept-preview-btn').disabled = false;
+                    document.getElementById('discard-preview-btn').disabled = false;
+                    updateStatus("✅ Preview generated.");
+
+                } catch (error) {
+                    updateStatus(`Preview Error: ${error.message}`, true);
+                    updateObjectControls(); // Re-enable controls on failure
+                }
+            });
+        });
+
+        document.getElementById('accept-preview-btn').addEventListener('click', () => {
+            const activeObject = emptyCanvas.getActiveObject();
+            if (activeObject && currentPreviewUrl) {
+                const originalProps = {
+                    left: activeObject.left, top: activeObject.top, angle: activeObject.angle,
+                    scaleX: activeObject.scaleX, scaleY: activeObject.scaleY, flipX: activeObject.flipX,
+                    originX: activeObject.originX, originY: activeObject.originY, id: activeObject.id
+                };
+
+                fabric.Image.fromURL(currentPreviewUrl, (newImg) => {
+                    newImg.set(originalProps);
+                    emptyCanvas.remove(activeObject);
+                    emptyCanvas.add(newImg);
+                    emptyCanvas.setActiveObject(newImg);
+                    emptyCanvas.renderAll();
+                    updateStatus("✅ View change applied.");
+                    document.getElementById('preview-image').src = "";
+                    currentPreviewUrl = null;
+                    document.getElementById('accept-preview-btn').disabled = true;
+                    document.getElementById('discard-preview-btn').disabled = true;
+                }, { crossOrigin: 'anonymous' });
+            }
+        });
+
+        document.getElementById('discard-preview-btn').addEventListener('click', () => {
+            document.getElementById('preview-image').src = "";
+            currentPreviewUrl = null;
+            updateStatus("Preview discarded.");
+            document.getElementById('accept-preview-btn').disabled = true;
+            document.getElementById('discard-preview-btn').disabled = true;
+            updateObjectControls(); // Re-enable cam buttons
         });
 
         const generateBtn = document.getElementById('generate-btn');
@@ -331,27 +520,21 @@
                 try {
                     updateStatus("Preparing object data for AI...");
                     const finalObjects = emptyCanvas.getObjects().map(obj => {
-                        const objId = obj.id ? parseInt(obj.id.split('-')[1], 10) : null;
+                        const objId = obj.id ? (isNaN(parseInt(obj.id)) ? obj.id : parseInt(obj.id)) : null;
                         return {
                             id: objId,
-                            left: obj.left,
-                            top: obj.top,
-                            width: obj.width * obj.scaleX,
-                            height: obj.height * obj.scaleY,
-                            angle: obj.angle,
-                            flipX: obj.flipX
+                            src: obj.getSrc(),
+                            left: obj.left, top: obj.top,
+                            width: obj.width * obj.scaleX, height: obj.height * obj.scaleY,
+                            angle: obj.angle, flipX: obj.flipX
                         };
                     }).filter(obj => obj.id !== null);
 
-                    if (finalObjects.length === 0) {
-                        throw new Error("No objects found on the empty room canvas to generate.");
-                    }
+                    if (finalObjects.length === 0) throw new Error("No objects found to generate.");
 
-                    updateStatus("Data prepared. Sending to AI...");
-                    const userPrompt = document.getElementById('user-prompt').value;
                     const payload = {
                         objects: finalObjects,
-                        user_prompt: userPrompt
+                        user_prompt: document.getElementById('user-prompt').value
                     };
 
                     const response = await fetch('/run_ai', {
@@ -378,19 +561,16 @@
 
         window.addEventListener('keydown', (e) => {
             if (e.key === 'Delete' || e.key === 'Backspace') {
-                const canvas = getActiveCanvas();
-                const activeObject = canvas?.getActiveObject();
+                const activeObject = emptyCanvas.getActiveObject();
                 if (activeObject) {
-                    canvas.remove(activeObject);
-                    canvas.discardActiveObject().renderAll();
+                    emptyCanvas.remove(activeObject);
+                    emptyCanvas.discardActiveObject().renderAll();
                 }
             }
         });
 
         window.onload = initCanvases;
     </script>
-
-
 </body>
 
 </html>
