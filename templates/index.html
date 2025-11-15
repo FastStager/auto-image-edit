@@ -309,7 +309,7 @@
                             scaleX: (obj.bbox[2] * scale) / furnitureImg.width,
                             scaleY: (obj.bbox[3] * scale) / furnitureImg.height,
                             id: obj.id,
-                            selectable: false // Make them unselectable on the source canvas
+                            selectable: false
                         });
                         stagedCanvas.add(furnitureImg);
                     }, { crossOrigin: 'anonymous' });
@@ -343,12 +343,35 @@
             document.getElementById('status').style.color = isError ? 'red' : 'black';
         }
 
-        document.getElementById('empty-image').addEventListener('change', (e) => {
+        document.getElementById('empty-image').addEventListener('change', async (e) => {
             const file = e.target.files[0];
-            if (file) {
-                emptyRoomImageUrl = URL.createObjectURL(file);
-                setCanvasBackground(emptyCanvas, emptyRoomImageUrl);
-                showTab('empty');
+            if (!file) return;
+
+            // Immediately set background for a responsive UI
+            emptyRoomImageUrl = URL.createObjectURL(file);
+            setCanvasBackground(emptyCanvas, emptyRoomImageUrl);
+            showTab('empty');
+            updateStatus("Uploading empty room to server...");
+
+            // Send the image to the backend to set it as the base for generation
+            const formData = new FormData();
+            formData.append('empty_image', file);
+
+            try {
+                const response = await fetch('/set_base_image', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+
+                updateStatus("✅ Empty room loaded and ready.", false);
+                // Enable generate button if there are already objects on canvas
+                if (emptyCanvas.getObjects().length > 0) {
+                    if (document.getElementById('generate-btn')) document.getElementById('generate-btn').disabled = false;
+                }
+            } catch (error) {
+                updateStatus(`Error setting base image: ${error.message}`, true);
             }
         });
 
@@ -368,6 +391,7 @@
                 const data = await response.json();
                 if (data.error) throw new Error(data.error);
 
+                setCanvasBackground(emptyCanvas, data.empty_image_url);
                 drawCutoutsOnStaged(data.staged_image_url, data.objects);
                 updateStatus(`✅ Detection complete! Found ${data.objects.length} objects.`);
                 document.getElementById('transfer-btn').disabled = false;
@@ -380,9 +404,10 @@
         document.getElementById('direct-furniture-upload').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
+            // Check if the base image has been uploaded to the backend. The URL is a good proxy for this.
             if (!emptyRoomImageUrl) {
                 updateStatus("Please upload an Empty Room image first.", true);
-                e.target.value = ''; // Reset file input
+                e.target.value = '';
                 return;
             }
             updateStatus("Uploading furniture...");
@@ -397,11 +422,8 @@
 
                 fabric.Image.fromURL(data.furniture_url, (img) => {
                     img.set({
-                        left: 50,
-                        top: 100,
-                        id: data.id,
-                        scaleX: 0.3, // Initial scale
-                        scaleY: 0.3
+                        left: 50, top: 100, id: data.id,
+                        scaleX: 0.3, scaleY: 0.3
                     });
                     emptyCanvas.add(img);
                     emptyCanvas.setActiveObject(img);
@@ -414,23 +436,15 @@
             } catch (error) {
                 updateStatus(`Error uploading furniture: ${error.message}`, true);
             } finally {
-                e.target.value = ''; // Reset file input
+                e.target.value = '';
             }
         });
 
         document.getElementById('transfer-btn').addEventListener('click', transferObjects);
 
         document.getElementById('start-over-btn').addEventListener('click', () => {
-            stagedCanvas.clear().setBackgroundColor('#eee').renderAll();
-            emptyCanvas.clear().setBackgroundColor('#eee').renderAll();
-            document.getElementById('result-image').src = "";
-            emptyRoomImageUrl = null;
-            document.getElementById('transfer-btn').disabled = true;
-            if (document.getElementById('generate-btn')) document.getElementById('generate-btn').disabled = true;
-            document.getElementById('empty-image').value = '';
-            document.getElementById('staged-image').value = '';
-            document.getElementById('direct-furniture-upload').value = '';
-            updateStatus("Cleared. Ready for new project.");
+            // A proper reset would also clear backend state, but for now this is fine
+            location.reload();
         });
 
         document.getElementById('rotate-btn').addEventListener('click', () => {
@@ -451,7 +465,6 @@
                 const prompt = e.target.dataset.prompt;
                 updateStatus(`Requesting AI preview for: ${prompt}...`);
 
-                // Disable all buttons during processing
                 document.querySelectorAll('.cam-btn, #accept-preview-btn, #discard-preview-btn').forEach(b => b.disabled = true);
 
                 try {
@@ -472,7 +485,7 @@
 
                 } catch (error) {
                     updateStatus(`Preview Error: ${error.message}`, true);
-                    updateObjectControls(); // Re-enable controls on failure
+                    updateObjectControls();
                 }
             });
         });
@@ -507,12 +520,17 @@
             updateStatus("Preview discarded.");
             document.getElementById('accept-preview-btn').disabled = true;
             document.getElementById('discard-preview-btn').disabled = true;
-            updateObjectControls(); // Re-enable cam buttons
+            updateObjectControls();
         });
 
         const generateBtn = document.getElementById('generate-btn');
         if (generateBtn) {
             generateBtn.addEventListener('click', async () => {
+                if (emptyCanvas.getObjects().length === 0) {
+                    updateStatus("Cannot generate, there are no objects on the canvas.", true);
+                    return;
+                }
+
                 generateBtn.disabled = true;
                 let seconds = 0;
                 const timerInterval = setInterval(() => { seconds++; updateStatus(`🚀 AI is processing... (${seconds}s)`); }, 1000);
@@ -529,8 +547,6 @@
                             angle: obj.angle, flipX: obj.flipX
                         };
                     }).filter(obj => obj.id !== null);
-
-                    if (finalObjects.length === 0) throw new Error("No objects found to generate.");
 
                     const payload = {
                         objects: finalObjects,

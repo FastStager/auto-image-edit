@@ -1,5 +1,6 @@
 import os
 import uuid
+import math
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from pyngrok import ngrok
 import json
@@ -10,9 +11,7 @@ import base64
 from io import BytesIO
 
 from gemini_edit import run_enhanced_ai_edit
-from qwen_edit import run_qwen_edit
-
-from drawing import draw_circles_on_image
+from qwen_edit import run_qwen_edit 
 try:
     from kaggle_secrets import UserSecretsClient
     KAGGLE_ENV = True
@@ -58,6 +57,25 @@ def uploaded_file(filename):
 def temp_file(filename):
     return send_from_directory(app.config['TMP_FOLDER'], filename)
 
+@app.route('/set_base_image', methods=['POST'])
+def set_base_image():
+    """Receives and stores the main empty room image for the session."""
+    if 'empty_image' not in request.files:
+        return jsonify({'error': 'No empty room image provided'}), 400
+    
+    file_storage = request.files['empty_image']
+    filepath, file_url = save_uploaded_file(file_storage)
+    
+    if not filepath:
+        return jsonify({'error': 'Failed to save base image'}), 500
+        
+    try:
+        empty_img_pil = Image.open(filepath).convert("RGB")
+        config.detection_results['empty_image'] = empty_img_pil
+        print("✅ Base empty room image has been set in the backend state.")
+        return jsonify({'success': True, 'empty_image_url': file_url})
+    except Exception as e:
+        return jsonify({'error': f'Could not process image: {str(e)}'}), 500
 
 @app.route('/detect', methods=['POST'])
 def detect_objects():
@@ -72,6 +90,8 @@ def detect_objects():
         return jsonify({'error': 'Failed to save files'}), 500
 
     empty_img_pil = Image.open(empty_path)
+    config.detection_results['empty_image'] = empty_img_pil
+    
     staged_img_pil = Image.open(staged_path).convert("RGB").resize(empty_img_pil.size)
     staged_np = np.array(staged_img_pil)
 
@@ -129,20 +149,16 @@ def upload_direct_furniture():
         return jsonify({'error': 'No furniture image provided'}), 400
     
     file_storage = request.files['furniture_image']
-    
-    # Save the uploaded furniture image to the main uploads folder
     filepath, file_url = save_uploaded_file(file_storage, UPLOAD_FOLDER)
     
     if not filepath:
         return jsonify({'error': 'Failed to save uploaded furniture image'}), 500
         
-    # Return the URL so the frontend can add it to the canvas
     return jsonify({
         'success': True,
         'furniture_url': file_url,
-        'id': f"direct-{uuid.uuid4()}" # Give it a unique ID
+        'id': f"direct-{uuid.uuid4()}"
     })
-
 
 @app.route('/qwen_edit', methods=['POST'])
 def qwen_edit_endpoint():
@@ -173,7 +189,6 @@ def qwen_edit_endpoint():
     except Exception as e:
         return jsonify({'error': f'An error occurred: {str(e)}'}), 500
 
-
 @app.route('/run_ai', methods=['POST'])
 def run_ai_edit_endpoint():
     data = request.json
@@ -185,7 +200,7 @@ def run_ai_edit_endpoint():
 
     empty_room_img = config.detection_results.get("empty_image")
     if not empty_room_img:
-        return jsonify({'error': 'Base images not found. Please run detection first.'}), 400
+        return jsonify({'error': 'Base empty room image not found on the server. Please upload one first.'}), 400
 
     original_cutouts_by_id = config.detection_results.get("original_cutouts_by_id", {})
     
